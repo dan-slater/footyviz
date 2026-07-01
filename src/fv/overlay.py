@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pandas as pd
 import supervision as sv
@@ -67,6 +68,42 @@ def _load_marks_map(marks: Path):
     return tid_to_label, tid_to_rgb, color_idx, palette
 
 
+def _pill(frame, cx, bottom_y, text, bgr):
+    """Small semi-transparent label pill centred at cx, sitting above bottom_y."""
+    fs, th = 0.42, 1
+    (tw, tht), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, fs, th)
+    padx, pady = 5, 3
+    w, h = tw + 2 * padx, tht + 2 * pady
+    x0 = int(max(2, min(cx - w / 2, frame.shape[1] - w - 2)))
+    y1p = int(bottom_y); y0 = y1p - h
+    ov = frame.copy()
+    cv2.rectangle(ov, (x0, y0), (x0 + w, y1p), bgr, -1)
+    cv2.addWeighted(ov, 0.72, frame, 0.28, 0, frame)
+    cv2.rectangle(frame, (x0, y0), (x0 + w, y1p), (20, 20, 20), 1, cv2.LINE_AA)
+    lum = 0.114 * bgr[0] + 0.587 * bgr[1] + 0.299 * bgr[2]
+    tc = (20, 20, 20) if lum > 140 else (255, 255, 255)
+    cv2.putText(frame, text, (x0 + padx, y1p - pady), cv2.FONT_HERSHEY_SIMPLEX, fs, tc, th, cv2.LINE_AA)
+
+
+def _draw_fifa_marker(frame, cx, top_y, bgr, label, show_label=True):
+    """FIFA-style: a downward chevron above the head + optional label pill."""
+    import numpy as _np
+    half, ch_h, gap = 13, 15, 10
+    apex_y = int(top_y) - gap          # apex (bottom point) sits `gap` above head
+    base_y = apex_y - ch_h
+    min_top = 4 + (20 if show_label else 0)
+    if base_y < min_top:               # clamp near the top edge
+        shift = min_top - base_y
+        apex_y += shift; base_y += shift
+    cx = int(cx)
+    pts = _np.array([[cx - half, base_y], [cx + half, base_y], [cx, apex_y]], _np.int32)
+    cv2.fillConvexPoly(frame, pts + _np.array([2, 2]), (0, 0, 0), cv2.LINE_AA)  # shadow
+    cv2.fillConvexPoly(frame, pts, tuple(int(c) for c in bgr), cv2.LINE_AA)
+    cv2.polylines(frame, [pts], True, (20, 20, 20), 1, cv2.LINE_AA)             # outline
+    if show_label and label:
+        _pill(frame, cx, base_y - 3, label, tuple(int(c) for c in bgr))
+
+
 def run(
     video: Path,
     tracks: Path,
@@ -76,6 +113,8 @@ def run(
     teams: Path | None = None,
     identities: Path | None = None,
     marks: Path | None = None,
+    style: str = "fifa",
+    show_labels: bool = True,
 ) -> Path:
     df = pd.read_parquet(tracks)
     by_frame = {int(f): g for f, g in df.groupby("frame")}
@@ -117,6 +156,7 @@ def run(
         trace = sv.TraceAnnotator(trace_length=trace_length, color=palette,
                                   color_lookup=sv.ColorLookup.CLASS)
     else:
+        palette = sv.ColorPalette([sv.Color(0, 200, 0)])
         box = sv.BoxAnnotator(thickness=2)
         label = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_padding=3)
         trace = sv.TraceAnnotator(trace_length=trace_length)
@@ -148,16 +188,24 @@ def run(
                 else:
                     class_id = group["class_id"].to_numpy(dtype=int)
                     labels = [f"Player {tid}" for tid in tracker_id]
-                detections = sv.Detections(
-                    xyxy=group[["x1", "y1", "x2", "y2"]].to_numpy(dtype=float),
-                    confidence=group["confidence"].to_numpy(dtype=float),
-                    class_id=class_id,
-                    tracker_id=tracker_id,
-                )
-                if draw_traces:
-                    frame = trace.annotate(frame, detections)
-                frame = box.annotate(frame, detections)
-                frame = label.annotate(frame, detections, labels=labels)
+                xyxy = group[["x1", "y1", "x2", "y2"]].to_numpy(dtype=float)
+                if style == "fifa":
+                    # No boxes, no traces — a floating chevron + label above each head.
+                    for (x1, y1, x2, y2), c, lab in zip(xyxy, class_id, labels):
+                        if lab.upper().startswith(("SPECTATOR", "OTHER")):
+                            continue                       # keep the product view clean
+                        bgr = palette.colors[int(c) % len(palette.colors)].as_bgr()
+                        _draw_fifa_marker(frame, (x1 + x2) / 2, y1, bgr, lab, show_labels)
+                else:
+                    detections = sv.Detections(
+                        xyxy=xyxy,
+                        confidence=group["confidence"].to_numpy(dtype=float),
+                        class_id=class_id, tracker_id=tracker_id,
+                    )
+                    if draw_traces:
+                        frame = trace.annotate(frame, detections)
+                    frame = box.annotate(frame, detections)
+                    frame = label.annotate(frame, detections, labels=labels)
             sink.write_frame(frame)
     print(f"wrote annotated video -> {out}")
     return out
@@ -177,9 +225,13 @@ def main() -> None:
                          "(also pass --teams for the colour palette)")
     ap.add_argument("--marks", type=Path, default=None,
                     help="generic marks parquet (track_id,label,color_r,color_g,color_b)")
+    ap.add_argument("--style", choices=["box", "fifa"], default="fifa",
+                    help="box = debug rectangles+traces; fifa = clean chevron+label markers")
+    ap.add_argument("--no-labels", action="store_true", help="fifa: chevron only, hide labels")
     args = ap.parse_args()
     run(args.video, args.tracks, args.out, args.trace_length, not args.no_traces,
-        teams=args.teams, identities=args.identities, marks=args.marks)
+        teams=args.teams, identities=args.identities, marks=args.marks,
+        style=args.style, show_labels=not args.no_labels)
 
 
 if __name__ == "__main__":
