@@ -50,6 +50,23 @@ def _load_identity_map(identities: Path):
     return tid_to_team, tid_to_label
 
 
+def _load_marks_map(marks: Path):
+    """raw_track_id -> (label, RGB) from a generic marks parquet.
+
+    Columns: track_id, label, color_r, color_g, color_b. Returns the maps plus a
+    ColorPalette of the distinct colours and a colour->index lookup so the CLASS
+    colour-lookup can paint arbitrary per-track colours (e.g. team / SPECTATOR /
+    REF)."""
+    mdf = pd.read_parquet(marks)
+    tid_to_label = dict(zip(mdf["track_id"].astype(int), mdf["label"].astype(str)))
+    tid_to_rgb = {int(r["track_id"]): (int(r["color_r"]), int(r["color_g"]), int(r["color_b"]))
+                  for _, r in mdf.iterrows()}
+    uniq = sorted(set(tid_to_rgb.values()))
+    color_idx = {c: i for i, c in enumerate(uniq)}
+    palette = sv.ColorPalette([sv.Color(*c) for c in uniq]) if uniq else sv.ColorPalette([sv.Color(170, 170, 170)])
+    return tid_to_label, tid_to_rgb, color_idx, palette
+
+
 def run(
     video: Path,
     tracks: Path,
@@ -58,6 +75,7 @@ def run(
     draw_traces: bool = True,
     teams: Path | None = None,
     identities: Path | None = None,
+    marks: Path | None = None,
 ) -> Path:
     df = pd.read_parquet(tracks)
     by_frame = {int(f): g for f, g in df.groupby("frame")}
@@ -67,8 +85,18 @@ def run(
     last_frame = int(df["frame"].max()) if len(df) else -1
 
     tid_to_team = team_to_idx = tid_to_label = None
+    marks_map = None
     info = sv.VideoInfo.from_video_path(str(video))
-    if identities is not None:
+    if marks is not None:
+        # Generic per-track colour + label (participant filter: players/ref/spectator).
+        tid_to_label, tid_to_rgb, color_idx, palette = _load_marks_map(marks)
+        marks_map = (tid_to_rgb, color_idx)
+        box = sv.BoxAnnotator(thickness=2, color=palette, color_lookup=sv.ColorLookup.CLASS)
+        label = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_padding=3,
+                                  color=palette, color_lookup=sv.ColorLookup.CLASS)
+        trace = sv.TraceAnnotator(trace_length=trace_length, color=palette,
+                                  color_lookup=sv.ColorLookup.CLASS)
+    elif identities is not None:
         # Label by STABLE identity ("A#7"/"A-3"), colour by team. Needs --teams
         # for the per-team kit palette.
         if teams is None:
@@ -101,7 +129,13 @@ def run(
             group = by_frame.get(i)
             if group is not None and len(group):
                 tracker_id = group["track_id"].to_numpy(dtype=int)
-                if tid_to_label is not None:
+                if marks_map is not None:
+                    tid_to_rgb, color_idx = marks_map
+                    grey = (170, 170, 170)
+                    class_id = np.array([color_idx.get(tid_to_rgb.get(int(t), grey), 0)
+                                         for t in tracker_id], dtype=int)
+                    labels = [tid_to_label.get(int(t), f"?{t}") for t in tracker_id]
+                elif tid_to_label is not None:
                     # Stable identity: colour by team, label with the stable id.
                     teams_of = [tid_to_team.get(int(t), "O") for t in tracker_id]
                     class_id = np.array([team_to_idx[t] for t in teams_of], dtype=int)
@@ -141,9 +175,11 @@ def main() -> None:
     ap.add_argument("--identities", type=Path, default=None,
                     help="stable-id parquet (from fv.identity): label boxes by stable id "
                          "(also pass --teams for the colour palette)")
+    ap.add_argument("--marks", type=Path, default=None,
+                    help="generic marks parquet (track_id,label,color_r,color_g,color_b)")
     args = ap.parse_args()
     run(args.video, args.tracks, args.out, args.trace_length, not args.no_traces,
-        teams=args.teams, identities=args.identities)
+        teams=args.teams, identities=args.identities, marks=args.marks)
 
 
 if __name__ == "__main__":
