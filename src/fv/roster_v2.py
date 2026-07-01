@@ -449,7 +449,8 @@ def holistic_dedup(identities_parquet, ctx, chosen, llm, out, montage_dir,
                         bt = [t for ll in bk for t in groups[ll]]
                         ov = any(ctx["frames"][a] & ctx["frames"][b] for a in lt for b in bt)
                         nums = {ctx["num_of"][t] for t in bt + lt if t in ctx["num_of"]}
-                        if not ov and len(nums) <= 1:
+                        # merge only if never co-present AND numbers are prefix-compatible
+                        if not ov and not _nums_incompatible(nums):
                             bk.append(l); break
                     else:
                         buckets.append([l])
@@ -474,20 +475,21 @@ def holistic_dedup(identities_parquet, ctx, chosen, llm, out, montage_dir,
     for sid, tracks in groups.items():
         team = _majority([ctx["team_of"].get(t, "O") for t in tracks])
         nums = sorted({ctx["num_of"][t] for t in tracks if t in ctx["num_of"]})
+        best_num = int(_best_number(nums)) if nums else -1
         if sid.endswith("-GK"):
             label = sid
         elif nums:
-            label = f"{team}#{nums[0]}"
+            label = f"{team}#{best_num}"
         else:
             counter[team] = counter.get(team, 0) + 1
             label = f"{team}-{counter[team]}"
         n_frames = len(set().union(*[ctx["frames"][t] for t in tracks]))
-        id_table.append({"stable_id": label, "team": team, "number": nums[0] if nums else -1,
+        id_table.append({"stable_id": label, "team": team, "number": best_num,
                          "n_raw_tracks": len(tracks), "n_frames": n_frames,
                          "raw_track_ids": ",".join(map(str, sorted(tracks)))})
         for t in tracks:
             rows.append({"raw_track_id": t, "stable_id": label, "team": team,
-                         "number": nums[0] if nums else -1})
+                         "number": best_num})
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).sort_values("raw_track_id").to_parquet(out, index=False)
     pd.DataFrame(id_table).sort_values(["team", "stable_id"]).to_parquet(
@@ -502,6 +504,27 @@ def _pick_label(labs, groups, num_of):
     numbered = [l for l in labs if any(t in num_of for t in groups[l])]
     pool = numbered or labs
     return max(pool, key=lambda l: len(groups[l]))
+
+
+def _nums_incompatible(nums) -> bool:
+    """True only if two numbers are mutually incompatible.
+
+    Numbers anchor identity, but OCR often reads a partial: a single digit "1" is
+    a PREFIX of (consistent with) "11"/"12"..., so it must NOT hard-split. Two
+    numbers conflict only when neither is a string-prefix of the other
+    (e.g. "7" vs "11"). All num_of entries are already confident-only.
+    """
+    s = [str(int(n)) for n in nums]
+    for i in range(len(s)):
+        for j in range(i + 1, len(s)):
+            if not (s[i].startswith(s[j]) or s[j].startswith(s[i])):
+                return True
+    return False
+
+
+def _best_number(nums):
+    """Most-specific number among prefix-compatible reads (longest, then largest)."""
+    return max((str(int(n)) for n in nums), key=lambda x: (len(x), int(x)))
 
 
 def main():
