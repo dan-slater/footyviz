@@ -355,6 +355,146 @@ def _roster_montage(all_groups, gk_ids, by_track, chosen, ctx, out_dir):
         print(f"[roster] montage {team}: {len(rows)} players")
 
 
+# --------------------------------------------------------------------------- #
+# Holistic roster-grid dedup — review the WHOLE per-team grid and merge duplicates
+# --------------------------------------------------------------------------- #
+_P_DEDUP = (
+    "Each labeled ROW below is a candidate player from ONE team in a night 5-a-side "
+    "match, shown with example crops (super-resolved) and any known jersey number. "
+    "Some rows are the SAME physical player duplicated across rows. A real team has "
+    "~7-8 outfield players. Tell me which ROW-LABELS to merge into one player.\n"
+    "Hard evidence: jersey numbers/names — same number => same player; clearly "
+    "different numbers => different players. Otherwise use hair, facial hair, skin, "
+    "build, socks, shoes, kit shade. Dark/plain kits are normal.\n"
+    "Return STRICT JSON {\"merge_groups\": [[label,label,...], ...], \"reasoning\": \"<short>\"}. "
+    "Only include labels that should merge; omit singletons. Merge aggressively toward "
+    "~7-8 players when the crops clearly show the same person."
+)
+
+
+def _roster_grid_image(id_to_tracks, chosen, num_of, sr, per_row=5, rowh=150):
+    """One image: a labeled row per identity (label + number + SR sample crops)."""
+    import cv2 as _cv2
+    rows, labels = [], []
+    for sid in sorted(id_to_tracks):
+        tracks = id_to_tracks[sid]
+        nums = sorted({num_of[t] for t in tracks if t in num_of})
+        cap = sid + (f"  #{','.join(map(str, nums))}" if nums else "")
+        lab = np.full((rowh, 190, 3), 25, np.uint8)
+        _cv2.putText(lab, sid, (6, 40), _cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        if nums:
+            _cv2.putText(lab, f"#{','.join(map(str, nums))}", (6, 78),
+                         _cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        cells = [lab]
+        picks = [c for t in tracks for c in chosen.get(t, [])][:per_row]
+        for c in picks:
+            im = _cv2.resize(sr(c, 4), (int(rowh * 0.66), rowh))
+            cells.append(im)
+        row = np.hstack(cells)
+        rows.append(row); labels.append(sid)
+    W = max(r.shape[1] for r in rows)
+    rows = [np.hstack([r, np.full((rowh, W - r.shape[1], 3), 20, np.uint8)]) if r.shape[1] < W else r for r in rows]
+    img = np.vstack([np.vstack([r, np.full((3, W, 3), 90, np.uint8)]) for r in rows])
+    return img, labels
+
+
+def holistic_dedup(identities_parquet, ctx, chosen, llm, out, montage_dir,
+                   max_iters=4, target=8):
+    """Iteratively review each team's whole roster grid and merge duplicate rows.
+
+    Mutates one shared groups dict {label -> [track_ids]}; GK identities (label
+    ends '-GK') are never merged. Emits the deduped identities parquet + table.
+    """
+    from .sr import upscale
+    from .llm import _parse_json
+    from .roster import _majority
+
+    idf = pd.read_parquet(identities_parquet)
+    groups: dict[str, list[int]] = {}
+    for t, s in zip(idf["raw_track_id"].astype(int), idf["stable_id"]):
+        groups.setdefault(s, []).append(int(t))
+
+    log, vetoes = {}, []
+    for team in ("A", "B", "O"):
+        team_labels = lambda: [s for s, ts in groups.items()
+                               if ctx["team_of"].get(ts[0], "O") == team and not s.endswith("-GK")]
+        history = [len(team_labels())]
+        for it in range(max_iters):
+            labs_now = team_labels()
+            if len(labs_now) <= target:
+                break
+            sub = {s: groups[s] for s in labs_now}
+            img, labels = _roster_grid_image(sub, chosen, ctx["num_of"], upscale)
+            cv2.imwrite(str(Path(montage_dir) / f"dedup_grid_{team}_iter{it}.jpg"), img)
+            try:
+                d = _parse_json(llm._vision(_P_DEDUP + f"\nRow labels present: {labels}.",
+                                            [img], want_json=True))
+                merge_groups = d.get("merge_groups", []) if isinstance(d, dict) else []
+                reasoning = (d.get("reasoning", "") if isinstance(d, dict) else "")[:280]
+            except Exception as e:
+                merge_groups, reasoning = [], f"ERR {e!r}"[:120]
+            applied = 0
+            for grp in merge_groups:
+                labs = [l for l in dict.fromkeys(grp) if l in groups]
+                if len(labs) < 2:
+                    continue
+                members = [t for l in labs for t in groups[l]]
+                overlap = any(ctx["frames"][members[x]] & ctx["frames"][members[y]]
+                              for x in range(len(members)) for y in range(x + 1, len(members)))
+                distinct_nums = {ctx["num_of"][t] for t in members if t in ctx["num_of"]}
+                if overlap:
+                    vetoes.append((team, labs, "time-overlap"))
+                    continue
+                if len(distinct_nums) > 1:                      # different confident numbers
+                    vetoes.append((team, labs, f"number-conflict {sorted(distinct_nums)}"))
+                    continue
+                keep = _pick_label(labs, groups, ctx["num_of"])
+                for l in labs:
+                    if l != keep:
+                        groups[keep] += groups[l]; del groups[l]
+                applied += 1
+            history.append(len(team_labels()))
+            print(f"[dedup {team}] iter {it}: {history[-2]} -> {history[-1]} rows (merged {applied}); {reasoning}")
+            if applied == 0:
+                break
+        log[team] = history
+
+    # Emit deduped identities (+ table). Re-canonicalise names: numbered kept, else team-index.
+    rows, id_table = [], []
+    counter = {}
+    for sid, tracks in groups.items():
+        team = _majority([ctx["team_of"].get(t, "O") for t in tracks])
+        nums = sorted({ctx["num_of"][t] for t in tracks if t in ctx["num_of"]})
+        if sid.endswith("-GK"):
+            label = sid
+        elif nums:
+            label = f"{team}#{nums[0]}"
+        else:
+            counter[team] = counter.get(team, 0) + 1
+            label = f"{team}-{counter[team]}"
+        n_frames = len(set().union(*[ctx["frames"][t] for t in tracks]))
+        id_table.append({"stable_id": label, "team": team, "number": nums[0] if nums else -1,
+                         "n_raw_tracks": len(tracks), "n_frames": n_frames,
+                         "raw_track_ids": ",".join(map(str, sorted(tracks)))})
+        for t in tracks:
+            rows.append({"raw_track_id": t, "stable_id": label, "team": team,
+                         "number": nums[0] if nums else -1})
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).sort_values("raw_track_id").to_parquet(out, index=False)
+    pd.DataFrame(id_table).sort_values(["team", "stable_id"]).to_parquet(
+        Path(out).parent / f"{Path(out).stem}_table.parquet", index=False)
+    tot = len(id_table)
+    per = pd.Series([r["team"] for r in id_table]).value_counts().to_dict()
+    print(f"[dedup] final {tot} identities, per-team {per}")
+    return log, vetoes, {s: groups[s] for s in groups}
+
+
+def _pick_label(labs, groups, num_of):
+    numbered = [l for l in labs if any(t in num_of for t in groups[l])]
+    pool = numbered or labs
+    return max(pool, key=lambda l: len(groups[l]))
+
+
 def main():
     import argparse, yaml
     from .llm import get_llm
