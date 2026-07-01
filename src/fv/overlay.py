@@ -42,6 +42,14 @@ def _load_team_map(teams: Path):
     return tid_to_team, team_to_idx, palette
 
 
+def _load_identity_map(identities: Path):
+    """raw_track_id -> (team, stable_id label) from fv.identity output."""
+    idf = pd.read_parquet(identities)
+    tid_to_team = dict(zip(idf["raw_track_id"].astype(int), idf["team"]))
+    tid_to_label = dict(zip(idf["raw_track_id"].astype(int), idf["stable_id"]))
+    return tid_to_team, tid_to_label
+
+
 def run(
     video: Path,
     tracks: Path,
@@ -49,6 +57,7 @@ def run(
     trace_length: int = 30,
     draw_traces: bool = True,
     teams: Path | None = None,
+    identities: Path | None = None,
 ) -> Path:
     df = pd.read_parquet(tracks)
     by_frame = {int(f): g for f, g in df.groupby("frame")}
@@ -57,9 +66,21 @@ def run(
     # video just produces a huge un-annotated clip and wastes time.
     last_frame = int(df["frame"].max()) if len(df) else -1
 
-    tid_to_team = team_to_idx = None
+    tid_to_team = team_to_idx = tid_to_label = None
     info = sv.VideoInfo.from_video_path(str(video))
-    if teams is not None:
+    if identities is not None:
+        # Label by STABLE identity ("A#7"/"A-3"), colour by team. Needs --teams
+        # for the per-team kit palette.
+        if teams is None:
+            raise SystemExit("--identities also needs --teams (for the team colour palette)")
+        _, team_to_idx, palette = _load_team_map(teams)
+        tid_to_team, tid_to_label = _load_identity_map(identities)
+        box = sv.BoxAnnotator(thickness=2, color=palette, color_lookup=sv.ColorLookup.CLASS)
+        label = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_padding=3,
+                                  color=palette, color_lookup=sv.ColorLookup.CLASS)
+        trace = sv.TraceAnnotator(trace_length=trace_length, color=palette,
+                                  color_lookup=sv.ColorLookup.CLASS)
+    elif teams is not None:
         # Colour boxes/traces/labels by TEAM (durable anchor across ID swaps).
         tid_to_team, team_to_idx, palette = _load_team_map(teams)
         box = sv.BoxAnnotator(thickness=2, color=palette, color_lookup=sv.ColorLookup.CLASS)
@@ -80,7 +101,12 @@ def run(
             group = by_frame.get(i)
             if group is not None and len(group):
                 tracker_id = group["track_id"].to_numpy(dtype=int)
-                if tid_to_team is not None:
+                if tid_to_label is not None:
+                    # Stable identity: colour by team, label with the stable id.
+                    teams_of = [tid_to_team.get(int(t), "O") for t in tracker_id]
+                    class_id = np.array([team_to_idx[t] for t in teams_of], dtype=int)
+                    labels = [tid_to_label.get(int(t), f"?{t}") for t in tracker_id]
+                elif tid_to_team is not None:
                     teams_of = [tid_to_team.get(int(t), "O") for t in tracker_id]
                     class_id = np.array([team_to_idx[t] for t in teams_of], dtype=int)
                     # ASCII separator: cv2's Hershey font can't render "·".
@@ -112,9 +138,12 @@ def main() -> None:
     ap.add_argument("--no-traces", action="store_true")
     ap.add_argument("--teams", type=Path, default=None,
                     help="team-map parquet (from fv.teams): colour boxes by team")
+    ap.add_argument("--identities", type=Path, default=None,
+                    help="stable-id parquet (from fv.identity): label boxes by stable id "
+                         "(also pass --teams for the colour palette)")
     args = ap.parse_args()
     run(args.video, args.tracks, args.out, args.trace_length, not args.no_traces,
-        teams=args.teams)
+        teams=args.teams, identities=args.identities)
 
 
 if __name__ == "__main__":
