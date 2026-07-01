@@ -438,21 +438,30 @@ def holistic_dedup(identities_parquet, ctx, chosen, llm, out, montage_dir,
                 labs = [l for l in dict.fromkeys(grp) if l in groups]
                 if len(labs) < 2:
                     continue
-                members = [t for l in labs for t in groups[l]]
-                overlap = any(ctx["frames"][members[x]] & ctx["frames"][members[y]]
-                              for x in range(len(members)) for y in range(x + 1, len(members)))
-                distinct_nums = {ctx["num_of"][t] for t in members if t in ctx["num_of"]}
-                if overlap:
-                    vetoes.append((team, labs, "time-overlap"))
-                    continue
-                if len(distinct_nums) > 1:                      # different confident numbers
-                    vetoes.append((team, labs, f"number-conflict {sorted(distinct_nums)}"))
-                    continue
-                keep = _pick_label(labs, groups, ctx["num_of"])
+                # A proposed group may mix real duplicates with co-present distinct
+                # players. Greedily partition the labels into buckets that are
+                # internally overlap-free AND number-consistent, then merge each
+                # bucket — so a valid sub-merge isn't lost to one bad member.
+                buckets: list[list[str]] = []
                 for l in labs:
-                    if l != keep:
-                        groups[keep] += groups[l]; del groups[l]
-                applied += 1
+                    lt = groups[l]
+                    for bk in buckets:
+                        bt = [t for ll in bk for t in groups[ll]]
+                        ov = any(ctx["frames"][a] & ctx["frames"][b] for a in lt for b in bt)
+                        nums = {ctx["num_of"][t] for t in bt + lt if t in ctx["num_of"]}
+                        if not ov and len(nums) <= 1:
+                            bk.append(l); break
+                    else:
+                        buckets.append([l])
+                if len(buckets) > 1:
+                    vetoes.append((team, labs, f"split into {buckets}"))
+                for bk in buckets:
+                    if len(bk) >= 2:
+                        keep = _pick_label(bk, groups, ctx["num_of"])
+                        for l in bk:
+                            if l != keep:
+                                groups[keep] += groups[l]; del groups[l]
+                        applied += 1
             history.append(len(team_labels()))
             print(f"[dedup {team}] iter {it}: {history[-2]} -> {history[-1]} rows (merged {applied}); {reasoning}")
             if applied == 0:
