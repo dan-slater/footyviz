@@ -40,6 +40,23 @@ python -m fv.detect_track data/raw/game.mp4 --out data/tracks/game.parquet
 python -m fv.overlay data/raw/game.mp4 data/tracks/game.parquet --out data/out/game.mp4
 ```
 
+## Run (M1 — team colours)
+
+Track IDs churn on panning footage, so colour the overlay by *team* instead —
+a durable anchor that survives ID swaps. `fv.teams` clusters each track's shirt
+colour (HSV, pitch-green/shadow masked) with KMeans into A / B / other (GK/ref).
+
+```bash
+# Assign teams for one continuous clip (scope with --start/--end-frame; the
+# source is a compilation so a single global clustering is muddy — cluster per clip).
+python -m fv.teams data/raw/game.mp4 data/tracks/game.parquet \
+    --out data/tracks/game_teams.parquet --start-frame 0 --end-frame 1000
+
+# Overlay coloured by team ("A | 1237" / "B | 1209"); omit --teams for plain "Player N".
+python -m fv.overlay data/raw/game.mp4 data/tracks/game.parquet \
+    --out data/out/game_teams.mp4 --teams data/tracks/game_teams.parquet
+```
+
 Output: `data/out/<name>_annotated.mp4`.
 
 ## Layout
@@ -57,8 +74,9 @@ configs/veo.yaml   # model/threshold/overlay knobs
 
 ## Roadmap
 
-- **M0 (this):** download → detect → track → overlay with `Player N` labels.
-- **M1:** team assignment (jersey color → embedding), label polish, batch runs.
+- **M0:** download → detect → track → overlay with `Player N` labels.
+- **M1 (done, color):** team assignment by jersey colour (`fv.teams`), team-coloured
+  overlay. Upgrade path: jersey **embedding** for cross-clip/robust team ID, label polish, batch runs.
 - **M2:** per-frame pitch homography → positions, heatmaps, distances, possession.
 - **M3:** events — audio-spike candidates → ball-near-goal check → assisted
   one-click confirm of scorer/assister (+ scoreboard OCR if footage has it).

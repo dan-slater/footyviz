@@ -12,11 +12,12 @@ dependencies = [
     "pandas>=2.1",
     "pyarrow>=15.0",          # parquet track store
     "pyyaml>=6.0",
+    "scikit-learn>=1.4",      # M1 team assignment (KMeans over jersey colour)
 ]
 
 [project.optional-dependencies]
 # Layered in for M2+ (pitch homography, team embeddings, event detection).
-stats = ["scikit-learn>=1.4", "matplotlib>=3.8"]
+stats = ["matplotlib>=3.8"]
 events = ["easyocr>=1.7", "librosa>=0.10"]
 
 [project.scripts]

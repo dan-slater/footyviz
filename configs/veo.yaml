@@ -18,9 +18,12 @@ overlay:
   trace_length: 30          # frames of motion trail per player
   draw_traces: true
 
-# --- Not wired yet; documents the intended M1-M4 knobs so the config is stable. ---
-teams:                      # M1
-  method: color             # color | embedding
+teams:                      # M1 - see fv.teams (CLI flags override)
+  method: color             # color (implemented) | embedding (M4)
+  samples_per_track: 30     # shirt crops sampled per track for its colour
+  k: null                   # null = pick 3/4 by silhouette; or force an int
+
+# --- Not wired yet; documents the intended M2-M4 knobs so the config is stable. ---
 pitch:                      # M2 - per-frame homography (camera view moves every frame)
   enabled: false
 events:                     # M3
