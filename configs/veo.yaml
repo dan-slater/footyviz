@@ -29,3 +29,16 @@ pitch:                      # M2 - per-frame homography (camera view moves every
 events:                     # M3
   audio_candidates: true
   scoreboard_ocr: false     # Veo raw usually has no score bug
+
+# Optional LLM/VLM enrichment layer. The whole pipeline (detect, track, teams,
+# whistles) runs 100% without this — it is a pure add-on gated by `enabled`.
+# When enabled: false, fv.llm.get_llm() returns None and every caller skips.
+llm:
+  enabled: false            # master switch — pipeline runs fully without it
+  provider: gemini          # gemini | openai | local
+  model: gemini-2.5-flash   # cheap/fast vision model; provider-specific
+  uses:                     # granular per-feature switches (only apply when enabled: true)
+    fingerprint: true       # rich appearance attributes for player identity
+    events: true            # goal/assist classification on whistle clips
+    scoreboard: false       # read the LED scoreboard (no board in this feed)
+    report: true            # written match summary
