@@ -1,0 +1,28 @@
+# Defaults tuned for Veo auto-panning single-camera footage pulled from YouTube.
+# CLI flags override anything here.
+
+acquire:
+  max_height: 1080          # Veo uploads are usually 1080p; bump to 1440/2160 if available.
+
+detect:
+  # M0 uses a COCO person detector (self-contained, no external weights/keys).
+  # Upgrade path: swap for a football-specific model (players + ball + referee),
+  # e.g. a Roboflow-trained YOLO checkpoint, then relax the person-only class filter.
+  model: yolo11m.pt
+  device: cuda:0            # zulzi-gpu. Use "cpu" locally (slow).
+  conf: 0.30
+  person_class_id: 0        # COCO "person"
+  stride: 1                 # process every Nth frame (1 = all). Raise for a quick pass.
+
+overlay:
+  trace_length: 30          # frames of motion trail per player
+  draw_traces: true
+
+# --- Not wired yet; documents the intended M1-M4 knobs so the config is stable. ---
+teams:                      # M1
+  method: color             # color | embedding
+pitch:                      # M2 - per-frame homography (camera view moves every frame)
+  enabled: false
+events:                     # M3
+  audio_candidates: true
+  scoreboard_ocr: false     # Veo raw usually has no score bug

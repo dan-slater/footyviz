@@ -1,0 +1,30 @@
+[project]
+name = "football-vision"
+version = "0.1.0"
+description = "Extract stats and burn player-tracking overlays onto amateur football (Veo) footage."
+requires-python = ">=3.10"
+dependencies = [
+    "yt-dlp>=2024.1.0",
+    "ultralytics>=8.3.0",     # YOLO11 detection
+    "supervision>=0.22.0",    # ByteTrack + annotators
+    "opencv-python>=4.9.0",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pyarrow>=15.0",          # parquet track store
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Layered in for M2+ (pitch homography, team embeddings, event detection).
+stats = ["scikit-learn>=1.4", "matplotlib>=3.8"]
+events = ["easyocr>=1.7", "librosa>=0.10"]
+
+[project.scripts]
+fv = "fv.pipeline:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
