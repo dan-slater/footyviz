@@ -29,7 +29,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from .identity import _agglomerate
+from .identity import _agglomerate, _best_crops_per_track
 
 TEAM_ORDER = ("A", "B", "O")
 
@@ -321,6 +321,154 @@ def fuse_vlm_cluster(ctx, out: Path, llm, crop_dir: Path) -> Path:
     return _emit(_name_clusters(groups_all, ctx), ctx, out)
 
 
+# --------------------------------------------------------------------------- #
+# VLM-PRIMARY — the VLM leads the grouping; embedding is only a singleton rescue
+# --------------------------------------------------------------------------- #
+def _montage_multi(track_to_crops: dict[int, list], cell=(96, 150), cols=6):
+    """Tile 1-2 crops per track into one grid; every cell captioned with its id."""
+    cells, order = [], []
+    for t, crops in track_to_crops.items():
+        for im in crops:
+            if im is None:
+                continue
+            im = cv2.resize(im, cell)
+            band = np.full((26, cell[0], 3), 20, np.uint8)
+            cv2.putText(band, f"{t}", (4, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cells.append(np.vstack([band, im]))
+        if crops:
+            order.append(t)
+    if not cells:
+        return None, []
+    rows = []
+    for i in range(0, len(cells), cols):
+        row = cells[i:i + cols]
+        while len(row) < cols:
+            row.append(np.full_like(cells[0], 40))
+        rows.append(np.hstack(row))
+    return np.vstack(rows), order
+
+
+_P_PRIMARY = (
+    "These are cropped images of players from the SAME team in one soccer match, "
+    "each cell labeled with a track id (some track ids appear twice = two views). "
+    "Some track ids are the SAME physical person appearing in different clips. "
+    "Group the track ids by person. Use hair, facial hair, skin tone, socks, shoes, "
+    "build, any visible jersey number/print, and distinguishing marks — NOT pose or "
+    "motion blur. Every track id must be in exactly one group; a group may be a "
+    "single id. Return STRICT JSON: {\"groups\": [[id,id,...], ...]}."
+)
+
+
+def _vlm_groups_primary(llm, montage_img, ids: list[int], hints: list[str]):
+    prompt = _P_PRIMARY + "\nPer-track hints (jersey number + appearance):\n" + "\n".join(hints)
+    prompt += f"\nThe track ids present are: {ids}."
+    txt = llm._vision(prompt, [montage_img], want_json=True)
+    m = re.search(r"\{.*\}", txt, re.DOTALL)
+    groups = []
+    if m:
+        try:
+            groups = json.loads(m.group(0)).get("groups", [])
+        except json.JSONDecodeError:
+            groups = []
+    seen, clean = set(), []
+    for g in groups:
+        gg = [int(x) for x in g if int(x) in ids and int(x) not in seen]
+        for x in gg:
+            seen.add(x)
+        if gg:
+            clean.append(gg)
+    for t in ids:
+        if t not in seen:
+            clean.append([t])
+    return clean
+
+
+def _num_split(sub: list[int], ctx) -> list[list[int]]:
+    """Split a group so confident DIFFERENT numbers never share an identity."""
+    by_num, free = {}, []
+    for t in sub:
+        nn = ctx["num_of"].get(t)
+        (by_num.setdefault(nn, []) if nn is not None else free).append(t)
+    if not by_num:
+        return [sub]
+    parts = list(by_num.values())
+    parts[0] += free
+    return parts
+
+
+def fuse_vlm_primary(ctx, out: Path, llm, crops: dict[int, list], montage_dir: Path,
+                     tiebreak_cos: float = 0.15) -> Path:
+    montage_dir.mkdir(parents=True, exist_ok=True)
+    groups_all, raw_by_team = [], {}
+    for team in TEAM_ORDER:
+        ids = [t for t in ctx["keep"] if ctx["team_of"].get(t, "O") == team]
+        if not ids:
+            continue
+        per = 2 if len(ids) <= 12 else 1  # keep the montage readable
+        t2c = {t: crops.get(t, [])[:per] for t in ids}
+        mont, order = _montage_multi(t2c)
+        if mont is None:
+            groups_all += [[t] for t in ids]
+            continue
+        cv2.imwrite(str(montage_dir / f"ident_vlmprimary_montage_{team}.jpg"), mont)
+        hints = []
+        for t in ids:
+            fp = ctx["fp_of"].get(t, {})
+            nn = ctx["num_of"].get(t)
+            hints.append(f"  {t}: " + (f"jersey#{nn}, " if nn is not None else "")
+                         + f"hair={fp.get('hair','?')}, socks={fp.get('socks','?')}, "
+                         f"shoes={fp.get('shoes','?')}, build={fp.get('build','?')}")
+        raw = _vlm_groups_primary(llm, mont, order, hints)
+        raw_by_team[team] = raw
+        # Enforce hard constraints the VLM may violate: temporal + jersey number.
+        for g in raw:
+            for sub in _split_temporal(g, ctx["frames"]):
+                groups_all += _num_split(sub, ctx)
+        print(f"[vlmprimary] team {team}: {len(ids)} tracks -> VLM groups {raw}")
+
+    # Embedding TIEBREAK: rescue confident singletons whose OSNet embedding is very
+    # close to an existing group (same team, no temporal/number conflict).
+    def centroid(g):
+        v = np.mean([ctx["embs"][t] for t in g], axis=0)
+        return v / (np.linalg.norm(v) + 1e-9)
+    merges = []
+    changed = True
+    while changed:
+        changed = False
+        singles = [i for i, g in enumerate(groups_all) if len(g) == 1]
+        for si in singles:
+            s = groups_all[si]
+            st = s[0]
+            best = None
+            for gi, g in enumerate(groups_all):
+                if gi == si or gi is None:
+                    continue
+                if ctx["team_of"].get(st, "O") != ctx["team_of"].get(g[0], "O"):
+                    continue
+                if any(ctx["frames"][st] & ctx["frames"][m] for m in g):
+                    continue
+                ns, ng = ctx["num_of"].get(st), [ctx["num_of"].get(m) for m in g if m in ctx["num_of"]]
+                if ns is not None and ng and any(ns != x for x in ng):
+                    continue
+                cd = 1.0 - float(ctx["embs"][st] @ centroid(g))
+                if cd <= tiebreak_cos and (best is None or cd < best[1]):
+                    best = (gi, cd)
+            if best is not None:
+                gi, cd = best
+                merges.append((st, [m for m in groups_all[gi]], round(cd, 3)))
+                groups_all[gi] += s
+                groups_all.pop(si)
+                changed = True
+                break
+    if merges:
+        print(f"[vlmprimary] embedding-tiebreak merges ({len(merges)}):")
+        for st, g, cd in merges:
+            print(f"    track {st} -> group {g}  (cos-dist {cd})")
+
+    print("[vlmprimary] final")
+    return _emit(_name_clusters(groups_all, ctx), ctx, out)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Compare bucket vs VLM-cluster roster fusion.")
     ap.add_argument("--cache", type=Path, required=True)
@@ -331,26 +479,42 @@ def main() -> None:
     ap.add_argument("--out-dir", type=Path, default=Path("data/tracks"))
     ap.add_argument("--min-frames", type=int, default=15)
     ap.add_argument("--bucket-threshold", type=float, default=0.30)
-    ap.add_argument("--approach", choices=["a", "b", "both"], default="both")
+    ap.add_argument("--approach", choices=["a", "b", "vlmprimary", "both"], default="both")
     ap.add_argument("--config", type=Path, default=Path("configs/veo.yaml"))
+    # For vlmprimary: collect 2 clearest crops per track from the source video.
+    ap.add_argument("--video", type=Path, default=None)
+    ap.add_argument("--tracks", type=Path, default=None, help="reid tracks parquet (for crops)")
+    ap.add_argument("--start-frame", type=int, default=0)
+    ap.add_argument("--end-frame", type=int, default=None)
+    ap.add_argument("--montage-dir", type=Path, default=Path("data/out"))
     args = ap.parse_args()
 
     ctx = load_context(args.cache, args.teams, args.jersey, args.vlm_fp, args.min_frames)
     print(f"dropped {len(ctx['dropped'])} noise tracks (<{args.min_frames}f): {sorted(ctx['dropped'])}")
     print(f"clustering {len(ctx['keep'])} tracks")
 
-    if args.approach in ("a", "both"):
-        print("== Approach A: bucketed attributes ==")
-        fuse_buckets(ctx, args.out_dir / "identities_bucket_night.parquet", args.bucket_threshold)
-    if args.approach in ("b", "both"):
-        print("== Approach B: VLM-as-clusterer ==")
+    def _llm():
         import yaml
         from .llm import get_llm
         cfg = yaml.safe_load(open(args.config)) if Path(args.config).exists() else {}
         cfg.setdefault("llm", {})["enabled"] = True
         cfg["llm"].setdefault("uses", {})["fingerprint"] = True
-        llm = get_llm(cfg)
-        fuse_vlm_cluster(ctx, args.out_dir / "identities_vlmcluster_night.parquet", llm, args.crop_dir)
+        return get_llm(cfg)
+
+    if args.approach in ("a", "both"):
+        print("== Approach A: bucketed attributes ==")
+        fuse_buckets(ctx, args.out_dir / "identities_bucket_night.parquet", args.bucket_threshold)
+    if args.approach in ("b", "both"):
+        print("== Approach B: VLM-as-clusterer ==")
+        fuse_vlm_cluster(ctx, args.out_dir / "identities_vlmcluster_night.parquet", _llm(), args.crop_dir)
+    if args.approach == "vlmprimary":
+        print("== VLM-PRIMARY: VLM leads, embedding tiebreak ==")
+        df = pd.read_parquet(args.tracks)
+        lo, hi = int(args.start_frame), (int(df["frame"].max()) if args.end_frame is None else int(args.end_frame))
+        df = df[(df["frame"] >= lo) & (df["frame"] <= hi) & (df["track_id"].isin(ctx["keep"]))]
+        crops = _best_crops_per_track(args.video, df, lo, hi, per_track=2)
+        fuse_vlm_primary(ctx, args.out_dir / "identities_vlmprimary_night.parquet",
+                         _llm(), crops, args.montage_dir)
 
 
 if __name__ == "__main__":
