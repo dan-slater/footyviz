@@ -14,3 +14,5 @@ venv/
 
 # os
 .DS_Store
+data/out/_dash_cache/
+data/out/dashboard.html
