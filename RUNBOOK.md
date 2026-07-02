@@ -136,6 +136,22 @@ llm:
 ```
 Then from the Mac: `scp zulzi-gpu:~/football-vision/data/out/dashboard.html .` and redeploy to the SAME Artifact URL (`https://claude.ai/code/artifact/9b09eb2c-1f14-4e83-b9c0-4d055ceb6be8`). To add a new identity experiment, append it to the `VARIANTS` list and re-run.
 
+### Experiment tracker (PRIMARY living lab doc — tabbed)
+`build_exp_tracker.py` builds a **tabbed** self-contained HTML: one tab per identity run
+(setup / result / notes) + an Overview chart. This is the doc we iterate on.
+```bash
+.venv/bin/python build_exp_tracker.py     # -> data/out/dashboard_experiments.html
+```
+Then Mac: `scp zulzi-gpu:~/football-vision/data/out/dashboard_experiments.html .` → redeploy Artifact
+`https://claude.ai/code/artifact/220dbdc8-10a9-4d8a-aa00-86d65f7aa6e1`. **Add a new experiment** = run the
+pipeline variant, add a `VARIANTS` entry (run#, label, tag, count-parquet, video, frames, montages, setup-note),
+re-run. Reuses the video cache in `data/out/_dash_cache/`.
+
+### PhD report (on the Mac, currently paused)
+`/Users/ds/football-vision-report` (git, Mac). Compile: `latexmk -pdf -bibtex -interaction=nonstopmode main.tex`
+(local MacTeX). Written: Ch1, Ch9, App A, App B, `references.bib`. Written by **Mac-local factory lines**
+(`~/orch-mac-lines/macline.sh spawn <name> <cwd> <model>`; `sayfile`/`view`/`approve`). See its `PLAN.md`/`STATE.md`.
+
 ---
 
 ## 5. Gotchas (bite-marks)

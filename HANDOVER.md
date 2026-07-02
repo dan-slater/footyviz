@@ -4,6 +4,33 @@ Living state doc. Pairs with `RUNBOOK.md` (how to run) and the dossier artifact
 (https://claude.ai/code/artifact/4a561329-21be-4376-acb9-2c92c80756d7).
 Last updated: 2026-07-02.
 
+## 2026-07-02 SESSION UPDATE — dashboards, PhD report, pivot back to experiments
+**Two living HTML docs (self-contained claude.ai Artifacts, regenerable):**
+- **Experiment tracker** (PRIMARY / current focus): https://claude.ai/code/artifact/220dbdc8-10a9-4d8a-aa00-86d65f7aa6e1
+  — one tab per identity run (setup / result / notes) + an Overview chart. Generator:
+  `zulzi:~/football-vision/build_exp_tracker.py` (commit 4df4673). Regenerate: run it →
+  pull `data/out/dashboard_experiments.html` → redeploy the Artifact. Add a run = add a `VARIANTS` entry.
+- **Review dashboard** (earlier, per-stage view): https://claude.ai/code/artifact/9b09eb2c-1f14-4e83-b9c0-4d055ceb6be8
+  — generator `build_dashboard.py`.
+
+**PhD dissertation report (PAUSED — pivoted back to experiments):** lives on the **Mac** at
+`/Users/ds/football-vision-report` (git). Dissertation-style; compiles to 53 pp via local MacTeX
+(`latexmk -pdf -bibtex main.tex`; Mac also has tectonic). WRITTEN: Ch1 Introduction, Ch9 Evaluation/Results
+(+2 plots), Appendix A Config/Repro, Appendix B VLM Prompts, `references.bib` (96 verified entries),
+related-work notes. Ch2–8, 10–11 are one-page stubs. Read-link (typeset pages):
+https://claude.ai/code/artifact/6315e372-0d53-40ea-b651-ea4968c8b515. Report ground-truth + per-chapter
+briefs in its `PLAN.md`; live board in `STATE.md`; real implementation reference in `notes/impl/`
+(`src/fv/*.py`, `veo.yaml`, versions) + result CSVs in `data/`.
+
+**Orchestration infra (this session):** report/writing work runs as **Mac-local factory lines** via
+`~/orch-mac-lines/macline.sh` (local tmux + fence, NO ssh/sudo) editing the Mac repo; **zulzi-gpu is for
+experiments only** (remote-tmux-orchestrator `factory.sh` drives zulzi lines). The Mac + zulzi are shared
+with other control planes — scope kills to `ORCH-fvr-*`, never touch others.
+
+**NEXT (pivot):** back to experimentation — run new identity-pipeline variants on zulzi (change the setup,
+e.g. the GK-role pre-pass for the double-A-4/keeper bug; the daytime-slice test), add each as a tab to the
+experiment tracker, iterate. Tools/data unchanged from below.
+
 ## What this is
 A monocular sports-CV pipeline that pulls an **amateur Veo football match off YouTube** and
 produces tracked players, team labels, whistle-based events, and a broadcast-style overlay — with
