@@ -129,6 +129,13 @@ llm:
 - `out/participant_classification.csv`, `out/whistles.csv`.
 - `data/models/RealESRGAN_x4plus.pth`.
 
+### Review dashboard (regenerable)
+`build_dashboard.py` builds a **self-contained HTML review console** — every stage's grids/frames + all per-variant overlay videos base64-inlined into one <16 MB fragment for a claude.ai Artifact. Videos are compressed to 300p/10fps, images to ~800px/q72 (the Artifact hard cap is 16 MB; full-res stays on the box; the 600 MB full-match video is deliberately not inlined).
+```bash
+.venv/bin/python build_dashboard.py            # -> data/out/dashboard.html (recomputes ID counts from parquet)
+```
+Then from the Mac: `scp zulzi-gpu:~/football-vision/data/out/dashboard.html .` and redeploy to the SAME Artifact URL (`https://claude.ai/code/artifact/9b09eb2c-1f14-4e83-b9c0-4d055ceb6be8`). To add a new identity experiment, append it to the `VARIANTS` list and re-run.
+
 ---
 
 ## 5. Gotchas (bite-marks)
