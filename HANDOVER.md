@@ -21,7 +21,7 @@ an optional, toggleable **vision-LLM** reasoning layer. Test video: a 39.5-min C
 | Vision-LLM layer (Gemini/OpenAI/local, toggle) | ✅ done | off by default; Gemini validated live |
 | Jersey-number OCR | 🟡 partial | reads where legible (#6/#7/#8/#11/#26, "VDM 6", "Elliot 7") |
 | **Player identity** | 🔴 at ceiling | ~23–24 stable vs true **~14–16** on the night slice |
-| Scoreboard OCR | 🔴 unresolved | physical board top-center IS there, too low-res/bloomed |
+| Scoreboard OCR | ⛔ ruled out (pending a timestamp) | top-center lit board is most likely a **drinks advert**, not a score — ~140 px even at sharpest pan, bloomed, no digits recoverable under the bloom. Investigated hard on the `ORCH-sb` line; flips only if a frame shows two clearly-different digits |
 | Goals & assists | ⬜ designed | whistle + audio-spike + ball-near-goal path, not built |
 | Stats (possession/heatmap/distance) | ⬜ next up | doesn't need perfect IDs |
 
@@ -69,13 +69,13 @@ players in cold-weather hoodies, ~35 px figures, heavy auto-pan. The methodology
 2. **Move to stats** — possession / heatmaps / distance; team-level ready without perfect IDs.
 3. **Fix the double-A-4 / keeper labeling bug** — small, clean.
 4. **Own Gemini key** — currently borrowing `~/projectx-restaurant-portal/.env`; give the project its own gitignored key. (User was checking which GCP project the key belongs to — "sorted separately".)
-5. **Scoreboard** — user to point at a timestamp where the top-center lit board's digits are readable; then crop+OCR/Gemini there.
-6. **Reseed the ORCH-fv factory line** — it's ~600 k tokens, very heavy.
+5. **Scoreboard** — *investigated & ruled out (2026-07-02).* The top-center lit board is most likely a **drinks advert**, not a scoreboard: ~140 px even at the sharpest pan, bloomed, and registration/temporal-averaging recovers no digits under the bloom (there's nothing there to read). Only reopen if you point at a specific timestamp where you can personally see two clearly-different digits (e.g. a "2" or "3") — then I zoom straight to it. Evidence crops on zulzi `data/out/`: `sb3_panel_compare.jpg` (registered straddle test), `sb3_montage.jpg` (top-12 sharpest), `sb3_best_00_f720_t1107.jpg` (crispest), `sb3_panel_*.jpg`, `sb3_digits_*.jpg`. No code changed for this.
+6. **~~Reseed the ORCH-fv factory line~~** — *done 2026-07-02:* the heavy `ORCH-fv` (~647 k) and `ORCH-sb` (~248 k) lines were retired. Spin a **fresh** line on demand (see Infra recap); don't revive the old ones.
 
 ## Infra recap
-- Repo + data: `zulzi-gpu:~/football-vision` (canonical, git HEAD `a467ef7`).
+- Repo + data: `zulzi-gpu:~/football-vision` (canonical, git HEAD `e064dd6` = docs; identity work is `a467ef7`). Untracked in root: `draw_pair.py` (a stray, not part of the pipeline).
 - GPU: single RTX 4090. venv `.venv` (uv, py3.12).
 - Access: `ssh zulzi-gpu`; fallback hop `ssh devboxv2 'ssh zulzi-gpu …'`.
-- Driven via `ORCH-fv` factory line (remote-tmux-orchestrator skill).
+- Driven via a `remote-tmux-orchestrator` factory line. **The old `ORCH-fv`/`ORCH-sb` lines were retired 2026-07-02** — spin a fresh line when you need one (`factory.sh` / the skill), don't revive the heavy ones. (`metro` on zulzi belongs to a different project — leave it alone.)
 - Gemini `gemini-3.1-pro-preview`, key from restaurant-portal `.env`.
 - Dossier artifact source: `/Users/ds/football-vision/system-overview.html`.

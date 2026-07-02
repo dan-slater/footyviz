@@ -10,7 +10,7 @@ For project *state / decisions*, see `HANDOVER.md`. For a visual architecture to
 
 | | Location |
 |---|---|
-| **Canonical repo + all data** | `zulzi-gpu:~/football-vision` (git; HEAD `a467ef7`) |
+| **Canonical repo + all data** | `zulzi-gpu:~/football-vision` (git; HEAD `e064dd6` = docs, identity work `a467ef7`) |
 | Local Mac copy | `/Users/ds/football-vision` — original M0 scaffold + `system-overview.html` + pulled `data/out/*.mp4` only. **NOT the full code** — the identity/LLM work lives on zulzi. |
 | GPU | RTX 4090, 24 GB, on `zulzi-gpu` (Tailscale `100.120.149.46`) |
 | venv | `~/football-vision/.venv` (uv-managed, **Python 3.12** — 3.14 has no torch wheels) |
@@ -94,7 +94,7 @@ grouping → co-occurrence veto).
 ### Events
 ```bash
 .venv/bin/python -m fv.events.whistle data/raw/<file>_1080.mp4 --out data/out/whistles.csv
-# scoreboard: fv.events.scoreboard — see HANDOVER (unresolved)
+# scoreboard: investigated & ruled out 2026-07-02 (likely a drinks advert, no recoverable digits) — see HANDOVER. Evidence: data/out/sb3_*.jpg
 ```
 
 ### Overlay render  →  H.264
@@ -138,4 +138,4 @@ llm:
 - **yt-dlp 1080p** needs deno (n-challenge) + imageio-ffmpeg (`--ffmpeg-location`).
 - **Gemini is a leading-prompt risk** — ask neutrally, feed geometry as fact (see HANDOVER lessons).
 - **Overlay VideoSink is video-only** — audio handled separately (events).
-- **ORCH-fv factory line is ~600 k tokens / very heavy** — reseed or kill+respawn before more work.
+- **Factory lines: `ORCH-fv` and `ORCH-sb` were retired 2026-07-02** (they were ~647 k / ~248 k tokens — very heavy). Spin a **fresh** line for new work; don't revive the old ones. `metro` on zulzi is a different project — leave it.
