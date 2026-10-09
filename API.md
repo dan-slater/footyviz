@@ -162,7 +162,9 @@ outfield kits). Goalkeepers / referees / odd kits are cluster `"O"` and are
       "id": "A-3",                // "A#7" when a confident jersey number anchors it
       "team": "A",                // "A" | "B" | "O"
       "frames": 1712,             // frames this identity was seen
-      "crop": "/jobs/j_…/files/crop_A-3.jpg",
+      "crop": "/jobs/j_…/files/crop_A-3.jpg",   // via the API. From the CLI (and the demo drops) it is
+                                                 // the bare file name "crop_A-3.jpg", relative to stats.json.
+                                                 // "#" in an id becomes "n" in the file name (A#7 -> crop_An7.jpg). null if no crop.
       "jersey": null              // string like "7" only when OCR was confident, else null
     }
   ],
@@ -192,5 +194,8 @@ outfield kits). Goalkeepers / referees / odd kits are cluster `"O"` and are
   Per-player numbers inherit identity errors — always pair them with `identity_note`.
 - `possession` can be dominated by `unresolved` on clips where the ball is
   small/occluded; show `ball_frames_frac` alongside.
-- Pre-rendered demo results (same file set) live at
-  `~/orch-scratch/footyviz-demo/{day,night}/` on the GPU box.
+- Pre-rendered demo results live at `~/orch-scratch/footyviz-demo/{day,night}/` on the GPU box:
+  `overlay.mp4` (<20 MB), `poster.jpg`, `roster.jpg`, `stats.json` and every `crop_*.jpg`
+  referenced by `roster[].crop` (bare names, relative to `stats.json`).
+- Product decision (2026-10-09): there are **no public jobs**. This API is an optional local front
+  (`python -m fv.api`, 127.0.0.1 only); the main entry point is the `python -m fv.job` CLI.

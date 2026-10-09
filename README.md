@@ -1,118 +1,123 @@
-# football-vision
+# footyviz
 
-Pull amateur football matches (Veo auto-panning single-camera footage) from
-YouTube, track every player, and burn a stats overlay onto the video —
-boxes, motion traces, and `Player N` labels — plus (later) extracted stats
-like possession, heatmaps, goals and assists.
+Turn an amateur football video (a YouTube or Veo link) into:
 
-## Input assumptions
+- **`overlay.mp4`**: the clip with a broadcast-style marker over every player, coloured by team (H.264, plays on phones)
+- **`stats.json`**: possession, distance covered, per-team heatmaps, a player roster and whistle events
+- **`roster.jpg`**: the best crop of every player the pipeline found, grouped by team
+- **`poster.jpg`**: one representative overlaid frame
 
-- **Source:** the auto-panned Veo highlight video from YouTube (a virtual crop
-  of a fixed 180° camera that pans/zooms to follow the ball).
-- Because the visible view moves every frame, pitch mapping uses **per-frame
-  homography** (M2), not a static transform.
-- Players leave/re-enter frame during pans, so expect some **ID swaps**; whole-
-  match identity is best-effort. (Upgrade: if you can export Veo's full
-  panoramic feed, the camera is effectively static and everything gets easier.)
+It runs on your own machine. You use your own GPU, and your own API keys if you turn the optional vision-LLM layer on.
+Open source (MIT). Built and tested on a 39-minute Cape Town 5-a-side filmed by a Veo
+auto-panning camera ([the test match](https://www.youtube.com/watch?v=hhaWMwLlugE)).
 
-## Setup
+> **Honesty line.** Identity is capped by the footage: on the reference night slice the
+> pipeline found ~23 stable identities vs ~14–16 true players (dark floodlit pitch, near-identical
+> kits, ~35 px figures, constant camera pan). **Team-level stats do not depend on perfect
+> identity**; per-player numbers do. Every `stats.json` carries this line in `identity_note`,
+> and every overlay has it burned in as a footer.
 
-```bash
-# on zulzi-gpu (has CUDA); locally use --device cpu (slow)
-uv venv && source .venv/bin/activate     # or: python -m venv .venv
-uv pip install -e .                       # or: pip install -e .
-```
-
-`ultralytics` downloads the YOLO11 weights (`yolo11m.pt`) on first run.
-
-## Run (M0 — watchable overlay)
+## Run it on your match
 
 ```bash
-# From a YouTube URL, full pipeline:
-fv --url "https://youtu.be/XXXXXXXX"
-
-# Quick test on a short slice of a local file (first ~900 frames):
-fv --video data/raw/game.mp4 --max-frames 900 --device cuda:0
-
-# Individual stages:
-python -m fv.acquire "https://youtu.be/XXXX" --out-dir data/raw
-python -m fv.detect_track data/raw/game.mp4 --out data/tracks/game.parquet
-python -m fv.overlay data/raw/game.mp4 data/tracks/game.parquet --out data/out/game.mp4
+git clone https://github.com/dan-slater/footyviz && cd footyviz
+curl -LsSf https://astral.sh/uv/install.sh | sh        # skip if you already have uv
+uv venv --python 3.12 .venv
+uv pip install -e .
+.venv/bin/python -c "import torch; print('GPU' if torch.cuda.is_available() else 'CPU only')"
+.venv/bin/python -m fv.job --url "https://www.youtube.com/watch?v=hhaWMwLlugE" --start-s 667 --end-s 727 --out out/my_match
+.venv/bin/python -m json.tool out/my_match/stats.json | head -60
 ```
 
-## Run (M1 — team colours)
+Swap in your own match URL and a window of up to 180 s (`--start-s` / `--end-s`, in seconds of
+the source video). `--url` also takes a local video file. The run prints progress per stage and
+leaves `overlay.mp4`, `poster.jpg`, `roster.jpg`, `stats.json` (and `crop_*.jpg`) in `--out`.
+The first run downloads model weights (YOLO11m, OSNet; ~60 MB).
 
-Track IDs churn on panning footage, so colour the overlay by *team* instead —
-a durable anchor that survives ID swaps. `fv.teams` clusters each track's shirt
-colour (HSV, pitch-green/shadow masked) with KMeans into A / B / other (GK/ref).
+- **GPU:** an NVIDIA GPU with CUDA is strongly recommended (a 60 s clip takes ~1–2 min on an RTX 4090).
+  Python 3.12 is used because torch has no wheels for 3.14 yet. If the check above prints `CPU only` on a
+  machine that has an NVIDIA GPU, install the CUDA build of torch:
+  `uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124`.
+- **CPU fallback:** add `--device cpu` to the `fv.job` command. It works but is **slow**: expect
+  tens of minutes for a 60 s clip. Use a short window (`--end-s` 20–30 s after `--start-s`) to try it.
+- `--no-identity` skips the re-identification + identity stage (faster). The roster then lists raw tracker IDs.
+
+## What's in `stats.json`
+
+Full field-by-field schema: **[API.md](API.md#statsjson-schema_version-1)**. In short:
+
+| key | what | how much to trust it |
+|---|---|---|
+| `teams` | the two outfield kits A/B: colour (hex) + name | good: kit colour clustering holds day and night |
+| `possession` | A / B / unresolved fractions | proxy: nearest player to the detected ball. `ball_frames_frac` says how often the ball was seen |
+| `distance` | per team + per roster player, pixels and estimated metres | rough: no pitch homography, so metres assume a 25 m visible pitch width (±50%) |
+| `heatmaps` | 32×18 grid per team, image coordinates | good for "where on screen did each team play"; not pitch coordinates |
+| `roster` | one entry per stable identity (id, team, frames, crop, jersey number if confident) | see the honesty line |
+| `events` | referee-whistle candidates (audio) | candidates, not confirmed events |
+| `pipeline` | model / tracker versions, run time | |
+
+## How it works
+
+```
+URL ──yt-dlp──▶ 720p source ──cut──▶ clip
+  ▶ YOLO11m (persons + ball) ─▶ ByteTrack ─▶ BoT-SORT + OSNet re-ID
+  ▶ kit-colour KMeans → teams A / B / O(ther: keeper, referee)
+  ▶ identity fusion (part-based colour fingerprint + OSNet, team hard-gate, co-occurrence cannot-link)
+  ▶ stats (possession proxy, pan-compensated distance, heatmaps, whistle audio)
+  ▶ FIFA-style overlay → H.264
+```
+
+All of it is classical CV plus pretrained models. Nothing calls an external API unless you
+enable the optional VLM layer below.
+
+Modules (`src/fv/`): `job.py` (the end-to-end runner), `acquire.py`, `detect_track.py`,
+`reid_track.py`, `teams.py`, `identity.py`, `stats.py`, `overlay.py`, `events/whistle.py`,
+`api.py` (optional), and the research-grade identity stack `jersey.py` / `sr.py` /
+`participant.py` / `roster*.py` / `llm.py`.
+
+## Optional: local HTTP API
+
+Only if you want a browser front on your own machine. It queues `fv.job` runs, one at a time on the GPU,
+and binds **127.0.0.1 only**:
 
 ```bash
-# Assign teams for one continuous clip (scope with --start/--end-frame; the
-# source is a compilation so a single global clustering is muddy — cluster per clip).
-python -m fv.teams data/raw/game.mp4 data/tracks/game.parquet \
-    --out data/tracks/game_teams.parquet --start-frame 0 --end-frame 1000
-
-# Overlay coloured by team ("A | 1237" / "B | 1209"); omit --teams for plain "Player N".
-python -m fv.overlay data/raw/game.mp4 data/tracks/game.parquet \
-    --out data/out/game_teams.mp4 --teams data/tracks/game_teams.parquet
+uv pip install -e ".[api]"
+.venv/bin/python -m fv.api --port 8790
+curl -s -XPOST localhost:8790/jobs -H 'content-type: application/json' \
+  -d '{"url":"https://www.youtube.com/watch?v=hhaWMwLlugE","start_s":667,"end_s":727}'
 ```
 
-## Run (M4 — stable player identity)
+Contract (routes, statuses, Range-enabled file serving, `stats.json` schema): [API.md](API.md).
+
+## Optional: vision-LLM roster review
+
+The research identity stack can ask a vision LLM (Gemini, OpenAI, or a local Ollama model) to
+review player crops: holistic roster-grid grouping, keeper/role checks, jersey reading. It is
+**off by default** (`llm.enabled: false` in `configs/veo.yaml`), and `fv.job` never turns it on.
+
+To use it, you need **your own** `GEMINI_API_KEY` or `OPENAI_API_KEY`:
 
 ```bash
-W="--start-frame 0 --end-frame 1800"   # a continuous clip
-# 1. Re-track with appearance ReID (BoT-SORT + OSNet) fed by the M0 detections.
-python -m fv.reid_track data/raw/game.mp4 data/tracks/game.parquet --out data/tracks/reid.parquet $W
-# 2. Team map + (optional) jersey numbers for the reid tracklets.
-python -m fv.teams  data/raw/game.mp4 data/tracks/reid.parquet --out data/tracks/reid_teams.parquet  $W
-python -m fv.jersey data/raw/game.mp4 data/tracks/reid.parquet --out data/tracks/reid_jersey.parquet $W
-# 3. Fuse tracklets -> stable identities (fingerprint + OSNet + team gate + jersey tiebreak).
-python -m fv.identity data/raw/game.mp4 data/tracks/reid.parquet $W \
-    --teams data/tracks/reid_teams.parquet --jersey data/tracks/reid_jersey.parquet \
-    --out data/tracks/identities.parquet --threshold 0.55
-# 4. Overlay labelled by stable id, coloured by team.
-python -m fv.overlay data/raw/game.mp4 data/tracks/reid.parquet --out data/out/ident.mp4 \
-    --teams data/tracks/reid_teams.parquet --identities data/tracks/identities.parquet
+cp .env.example .env        # then fill in your key; .env is gitignored
+uv pip install -e ".[vlm,sr]"
 ```
 
-Output: `data/out/<name>_annotated.mp4`.
+Then set `llm.enabled: true` in `configs/veo.yaml`, or pass `--vlm` to `python -m fv.identity`.
+See [RUNBOOK.md](RUNBOOK.md) for the identity experiments and [HANDOVER.md](HANDOVER.md) for
+what worked (neutral prompts, whole-grid review, context crops, a geometric co-occurrence veto).
 
-## Layout
+## Demo
 
-```
-src/fv/
-  acquire.py       # 1. yt-dlp download
-  detect_track.py  # 2+3. YOLO11 detect + ByteTrack -> tracks.parquet
-  overlay.py       # 7. draw boxes/labels/traces -> annotated mp4 (--teams/--identities)
-  pipeline.py      # orchestrates the above (the `fv` command)
-  teams.py         # M1. jersey-colour -> team A/B/other
-  reid_track.py    # M4. BoT-SORT + OSNet appearance re-ID tracking
-  jersey.py        # M4. jersey-number OCR per track (weak identity signal)
-  identity.py      # M4. fingerprint+embedding fusion -> stable player identities
-  events/          # 6. goals/assists (M3, stubbed)
-  # pitch.py, stats.py land in M2
-configs/veo.yaml   # model/threshold/overlay knobs
-```
+Two pre-rendered 60 s results from the test match, a golden-hour **day** slice and a floodlit
+**night** slice, are shown on the project page. To reproduce the day slice, run the
+`fv.job` command above. For the night slice, use `--start-s 0 --end-s 60`.
 
-## Roadmap
+## Research notes
 
-- **M0:** download → detect → track → overlay with `Player N` labels.
-- **M1 (done, color):** team assignment by jersey colour (`fv.teams`), team-coloured
-  overlay. Upgrade path: jersey **embedding** for cross-clip/robust team ID, label polish, batch runs.
-- **M4 (done, stable identity):** collapse the ~4000 churning ByteTrack IDs into a
-  small stable set of per-player identities. Layers: `fv.reid_track` (BoT-SORT +
-  OSNet appearance ReID) → `fv.identity` (part-based appearance fingerprint —
-  hair/skin/shirt/shorts/socks/shoes dominant colour + build — fused with the OSNet
-  embedding, team as a hard gate, temporal-overlap cannot-link, `fv.jersey` number
-  as a weak tie-breaker) → overlay labelled by stable id (`A#7` / `A-3`).
-- **M2:** per-frame pitch homography → positions, heatmaps, distances, possession.
-- **M3:** events — audio-spike candidates → ball-near-goal check → assisted
-  one-click confirm of scorer/assister (+ scoreboard OCR if footage has it).
-- **M4:** accuracy — fine-tune YOLO on your kits, appearance-embedding re-ID to
-  cut ID swaps, football-specific detector (players + ball + referee).
+This started as a research project on monocular player identity in amateur footage. The
+experiment log, design decisions and lessons are in [HANDOVER.md](HANDOVER.md) (links to the
+experiment tracker and the dissertation write-up) and [RUNBOOK.md](RUNBOOK.md).
 
-## Notes
+## Licence
 
-- Detection currently uses a COCO **person** detector (self-contained). Swap in
-  a football-specific YOLO checkpoint to also get the ball/referee.
-- Overlay video has no audio; audio is handled in M3 for event detection.
+MIT, see [LICENSE](LICENSE).
