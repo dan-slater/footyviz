@@ -12,8 +12,12 @@ variance control** ahead of speed. Each decision lists its reason.
 
 ## 0. What the footage looks like (probed, not assumed)
 
-So far only the reference clip `A_hhaWMwLlugE_900-1020` has been probed. I cut it from the local
-1080p source; the relayed clips have not landed yet. Findings:
+**Sources are full matches.** The control plane relays whole 1080p matches with audio
+(about 40 min and about 1.1 GB each) to `~/footyviz-bench-data/raw/<tier>_<videoid>.mp4`.
+A `.tmp` suffix means the copy is still in progress. The reference match is already at
+`~/football-vision/data/raw/hhaWMwLlugE_1080.mp4`. `fv.bench` cuts every benchmark window from
+these files (§1, §7). So far only the reference window `A1` (900–1020 s, cut from the local
+1080p) has been probed; each relayed match is probed once it lands. Findings:
 
 - 1920×1080, 30 fps, H.264, AAC stereo. YouTube's ceiling here is 1080p at about 2 Mb/s, so the
   source is already heavily compressed.
@@ -44,7 +48,31 @@ height, ball visibility rate and colour cast. Phase 2 also re-checks each relaye
 
 ---
 
-## 1. Clip set v1
+## 1. Match set and windows v1
+
+The unit of the benchmark is the **match**: one full video, one tier, one split. Inside a match
+there are three kinds of window:
+- **Labelled eval windows**: 120 s, human GT (§3). Default `900–1020 s`. The table below lists
+  these.
+- **Full-match runs**: the method runs over the whole match. There is no box GT, but these runs
+  measure throughput, cap hits and lighting drift across the match, and they score the one
+  full-match label we get for free: the **final score in the title**, kept for the later
+  goals/events task. The audio also makes whistles scoreable later.
+- **Train material**: *the whole* of every train match (4 × about 40 min ≈ 160 min,
+  pseudo-labelled). The unlabelled parts of **eval** matches are **eval-reserved** and never
+  used for training, because they are the same people.
+
+**Choosing the window.** The 900 s default is fixed in advance, *before* any method sees the
+footage, so the window is not picked to flatter a method. Two exceptions, recorded in the
+manifest:
+- If 900–1020 is mostly a stoppage (more than 30 s with the ball out of play or teams
+  regrouping), shift the window +60 s at a time until it isn't.
+- A match whose lighting changes during the game gets a **second** labelled window in the other
+  lighting, scored under that window's tier. The reference match's dusk-to-night change is the
+  obvious case; whether it adds a window is decided when the full matches are probed.
+
+Phase 2 may add more 120 s eval windows per eval match. Each one costs about 35 Daniel-minutes
+(§3), so v1 starts with one per match.
 
 | id | tier | video | window (source s) | teams (from title) | role |
 |---|---|---|---|---|---|
@@ -66,11 +94,12 @@ height, ball visibility rate and colour cast. Phase 2 also re-checks each relaye
   Candidates from `thumb_scores.csv`: league-style title, luma > 95, edges > 25, no team shared
   with the eval set. `YwkdvL6Un3g` (Unathletico v The Wizards), `b6_9iO20jGQ` (Jenna Tolls v
   Flappys) and `vWyHM8saydI` (Banana Banana v Stiles). These need an eyeball check and a relay
-  from the Mac.
-- **Why 2-minute windows at 900 s**: about 15 minutes in, so play has settled and the clip is
+  of the full match from the Mac.
+- **Why 2-minute windows at 900 s**: about 15 minutes in, so play has settled and the window is
   inside the first half. Two minutes is long enough for real identity churn: players leave and
-  re-enter view, and subs come on. It is short enough to label. Phase 2 checks that each window
-  is not mostly a stoppage; if one is, shift it ±60 s and record that in the manifest.
+  re-enter view, and subs come on. It is short enough to label. Identity over 40 minutes, with
+  rolling subs, is a different and harder problem. The full-match runs show it qualitatively;
+  labelling it is out of scope for v1.
 
 ---
 
@@ -242,8 +271,9 @@ benchmarked method that resembles it. So:
 - **Dense subset**: 4 segments × 40 min ≈ **2.7 h**. I propose doing it **after** the cheap
   layers, once we see whether the keyframe metrics already separate the methods.
 - The cheap layers can be done in 20–30 minute sittings, one clip each.
-- **Train clips need no Daniel time in v1.** For fine-tuning they get pre-labels, i.e. pseudo
-  labels. A verified train set is a later, separate budget.
+- **Train matches need no Daniel time in v1.** Each full train match gets pre-labels for
+  fine-tuning, i.e. pseudo labels: about 72k frames per match. A verified train set (e.g. a few
+  sampled windows per train match through the same page) is a later, separate budget.
 
 Expected noise, recorded and not hidden:
 - the person count on A-tier night footage may itself be uncertain (grey hoodies);
@@ -330,7 +360,10 @@ train match.
   the eval teams.
 - **Venue**: every Rookie clip is the same few Cape Town venues, so venue leakage is unavoidable
   inside this channel. That is documented. An out-of-channel eval clip is the future fix.
-- **v1**: eval = A1, A0, B1, C1, D1, D2. Train = A2, B2, C2, D3.
+- **v1**: eval matches = hhaWMwLlugE (A1, A0), mzcJ8_wyOaw (B1), GQfni7JdYvY (C1),
+  c6IV1mQ3GjM (D1), gjd12dkMNNI (D2). Train matches = O4YGl9Ps93A, vS4NP3wkBIA, 2u32W0O7ZfQ and
+  the D3 replacement, each used **in full**.
+  The split is decided per match, never per frame or window.
 - **Growth**: `thumb_scores.csv` has 1,631 league-style titles. Filter out rugby, school
   festivals and 11-a-side. New train matches are drawn from teams that never appear in eval;
   new eval matches move their teams' other matches out of train.
@@ -453,10 +486,19 @@ RT-DETR-x + SAM2 only.
     alignment;
   - labels (JSON);
   - code and docs.
-- **Fetch script**: `python -m fv.bench fetch --manifest bench/manifest.json --cookies …`. It
-  downloads with yt-dlp, makes a frame-accurate re-encoded cut (libx264 crf 12, the same recipe
-  used for A1), and verifies the frame count and pHashes. If the YouTube encode has changed, it
-  fails loudly.
+- **Data layout (on the box, outside git):**
+  - `raw/<tier>_<videoid>.mp4` holds the full matches.
+  - `clips/<clip_id>.mp4` holds the windows cut from them.
+  - `frames/`, `prelabels/` and `results/` hold everything derived.
+- **Fetch script**: `python -m fv.bench fetch --manifest bench/manifest.json [--cookies …]`
+  works in two steps.
+  1. Get each **full match** with yt-dlp (1080p plus audio), or skip that if
+     `raw/<tier>_<id>.mp4` already exists, as on zulzi where the control plane relays them.
+  2. Cut every window in the manifest with a frame-accurate re-encode (libx264 crf 12, the
+     recipe used for A1), and verify each window's frame count and pHashes.
+
+  If the YouTube encode has changed, it fails loudly. The manifest also stores the full match's
+  duration and frame count, so a truncated relay is caught.
 - **Licence note** in the manifest:
   - Footage © the uploader (Rookie / Veo) and is **not redistributed**.
   - Labels are CC-BY-4.0, code is MIT.
@@ -479,3 +521,6 @@ RT-DETR-x + SAM2 only.
    relayed (candidates in §1).
 4. **VLM budget** for the B1/B2 repeats (est. $30–60), and N = 3 repeats as the default.
 5. Is **A0** (the run 1–13 slice) worth labelling, at about 18 min?
+6. Full matches: is **one labelled 120 s window per eval match** (default 900 s, shift only for
+   stoppages, plus a second window if the lighting changes) the right v1? And should whole-match
+   runs be on the board as an unlabelled stability and throughput check?
