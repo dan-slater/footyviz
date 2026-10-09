@@ -103,7 +103,7 @@ def extract(video: Path, tracks: Path, cache_out: Path,
             samples_per_track: int = 40, device: str = "cuda:0",
             reid_weights: str = "osnet_x1_0_msmt17.pt") -> Path:
     """Decode once; per track store OSNet embedding, per-band Lab, aspect, frames."""
-    from boxmot.reid import ReID
+    from boxmot.reid.core.reid_handler import ReID  # boxmot 16.0.x (pinned)
 
     df = pd.read_parquet(tracks)
     lo = int(start_frame)
@@ -563,9 +563,10 @@ def fuse_vlm(cache: Path, teams: Path, vlm_fp: dict[int, dict], out: Path,
 def run(video: Path, tracks: Path, out: Path, teams: Path, jersey: Path | None = None,
         start_frame: int = 0, end_frame: int | None = None,
         samples_per_track: int = 40, device: str = "cuda:0",
-        threshold: float = 0.42, cache: Path | None = None) -> Path:
+        threshold: float = 0.42, cache: Path | None = None,
+        reid_weights: str = "osnet_x1_0_msmt17.pt") -> Path:
     cache = cache or out.parent / f"{out.stem}_desc.npz"
-    extract(video, tracks, cache, start_frame, end_frame, samples_per_track, device)
+    extract(video, tracks, cache, start_frame, end_frame, samples_per_track, device, reid_weights)
     return fuse(cache, teams, out, jersey, threshold=threshold)
 
 

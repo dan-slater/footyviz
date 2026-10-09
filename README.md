@@ -40,6 +40,10 @@ The first run downloads model weights (YOLO11m, OSNet; ~60 MB).
   `uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124`.
 - **CPU fallback:** add `--device cpu` to the `fv.job` command. It works but is **slow**: expect
   tens of minutes for a 60 s clip. Use a short window (`--end-s` 20–30 s after `--start-s`) to try it.
+- **"Sign in to confirm you're not a bot"** from YouTube: add `--cookies-from-browser firefox`
+  (or `chrome`, ...) or `--cookies cookies.txt` to the `fv.job` command. If formats are missing,
+  install [deno](https://deno.land) (`curl -fsSL https://deno.land/install.sh | sh`). yt-dlp uses
+  it for YouTube's JS challenge. Or download the video yourself and pass the file to `--url`.
 - `--no-identity` skips the re-identification + identity stage (faster). The roster then lists raw tracker IDs.
 
 ## What's in `stats.json`
@@ -108,7 +112,8 @@ what worked (neutral prompts, whole-grid review, context crops, a geometric co-o
 
 ## Demo
 
-Two pre-rendered 60 s results from the test match, a golden-hour **day** slice and a floodlit
+Two pre-rendered 60 s results from the test match, a **dusk** slice (frames 20000–21800, the
+brightest stretch; the match has no full-daylight footage) and a floodlit
 **night** slice, are shown on the project page. To reproduce the day slice, run the
 `fv.job` command above. For the night slice, use `--start-s 0 --end-s 60`.
 

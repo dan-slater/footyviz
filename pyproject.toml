@@ -1,7 +1,9 @@
 [project]
-name = "football-vision"
-version = "0.1.0"
-description = "Extract stats and burn player-tracking overlays onto amateur football (Veo) footage."
+name = "footyviz"
+version = "0.2.0"
+description = "Turn an amateur football video (YouTube/Veo) into a tracked overlay + team stats."
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
     "yt-dlp>=2024.1.0",
@@ -13,12 +15,18 @@ dependencies = [
     "pyarrow>=15.0",          # parquet track store
     "pyyaml>=6.0",
     "scikit-learn>=1.4",      # M1 team assignment (KMeans over jersey colour)
+    "scipy>=1.11",            # whistle detection (STFT)
+    "boxmot>=16.0.11,<16.1",  # BoT-SORT + OSNet re-ID (API moved in 25.x; pinned)
+    "imageio-ffmpeg>=0.5",    # bundled ffmpeg: clip cutting + H.264 output
 ]
 
 [project.optional-dependencies]
 # Layered in for M2+ (pitch homography, team embeddings, event detection).
 stats = ["matplotlib>=3.8"]
 events = ["easyocr>=1.7", "librosa>=0.10"]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]          # optional local HTTP front (fv.api)
+vlm = ["google-genai>=1.0", "openai>=1.30"]         # optional vision-LLM roster review
+sr = ["spandrel>=0.4"]                              # Real-ESRGAN crops for the VLM layer
 
 [project.scripts]
 fv = "fv.pipeline:main"

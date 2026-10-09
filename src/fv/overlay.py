@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Callable
 
 import cv2
 import numpy as np
@@ -104,6 +105,45 @@ def _draw_fifa_marker(frame, cx, top_y, bgr, label, show_label=True):
         _pill(frame, cx, base_y - 3, label, tuple(int(c) for c in bgr))
 
 
+def _draw_footer(frame, text: str):
+    """Small dark band along the bottom edge carrying one line of text."""
+    H, W = frame.shape[:2]
+    fs = 0.42 if W <= 1400 else 0.6
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, fs, 1)
+    if tw > W - 16:                                    # shrink to fit
+        fs *= (W - 16) / tw
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, fs, 1)
+    band = th + 12
+    roi = frame[H - band:H]
+    roi[:] = (roi * 0.35).astype(roi.dtype)
+    cv2.putText(frame, text, (8, H - 6), cv2.FONT_HERSHEY_SIMPLEX, fs, (235, 235, 235), 1, cv2.LINE_AA)
+
+
+class _H264Sink:
+    """H.264 (libx264, yuv420p, faststart) writer via imageio-ffmpeg — playable on phones."""
+
+    def __init__(self, path: Path, info: sv.VideoInfo, crf: int = 23, maxrate_k: int = 2200):
+        import imageio_ffmpeg
+        self._gen = imageio_ffmpeg.write_frames(
+            str(path), (info.width, info.height), fps=info.fps, codec="libx264",
+            pix_fmt_in="bgr24", pix_fmt_out="yuv420p", quality=None, macro_block_size=2,
+            # capped VBR: ~2.2 Mb/s max keeps a 60 s 720p clip near 15 MB
+            output_params=["-crf", str(crf), "-maxrate", f"{maxrate_k}k",
+                           "-bufsize", f"{2 * maxrate_k}k", "-preset", "veryfast",
+                           "-movflags", "+faststart"],
+        )
+        self._gen.send(None)
+
+    def __enter__(self):
+        return self
+
+    def write_frame(self, frame):
+        self._gen.send(np.ascontiguousarray(frame))
+
+    def __exit__(self, *exc):
+        self._gen.close()
+
+
 def run(
     video: Path,
     tracks: Path,
@@ -115,6 +155,10 @@ def run(
     marks: Path | None = None,
     style: str = "fifa",
     show_labels: bool = True,
+    footer: str | None = None,
+    h264: bool = True,
+    poster: Path | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> Path:
     df = pd.read_parquet(tracks)
     by_frame = {int(f): g for f, g in df.groupby("frame")}
@@ -140,8 +184,13 @@ def run(
         # for the per-team kit palette.
         if teams is None:
             raise SystemExit("--identities also needs --teams (for the team colour palette)")
-        _, team_to_idx, palette = _load_team_map(teams)
+        team_map, team_to_idx, palette = _load_team_map(teams)
         tid_to_team, tid_to_label = _load_identity_map(identities)
+        # Tracks the identity pass skipped (too few usable crops) fall back to
+        # their team colour with a bare team letter instead of "?123".
+        for t, team in team_map.items():
+            if t not in tid_to_label:
+                tid_to_team[t], tid_to_label[t] = team, team
         box = sv.BoxAnnotator(thickness=2, color=palette, color_lookup=sv.ColorLookup.CLASS)
         label = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_padding=3,
                                   color=palette, color_lookup=sv.ColorLookup.CLASS)
@@ -162,10 +211,16 @@ def run(
         trace = sv.TraceAnnotator(trace_length=trace_length)
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    with sv.VideoSink(str(out), info) as sink:
+    sink_cm = _H264Sink(out, info) if h264 else sv.VideoSink(str(out), info)
+    # Poster = the frame with the most markers in the middle half of the clip.
+    poster_best = (-1, None)
+    poster_lo, poster_hi = last_frame // 4, 3 * last_frame // 4
+    with sink_cm as sink:
         for i, frame in enumerate(sv.get_video_frames_generator(str(video))):
             if i > last_frame:
                 break
+            if progress is not None and i % 30 == 0:
+                progress(i, last_frame + 1)
             group = by_frame.get(i)
             if group is not None and len(group):
                 tracker_id = group["track_id"].to_numpy(dtype=int)
@@ -206,7 +261,15 @@ def run(
                         frame = trace.annotate(frame, detections)
                     frame = box.annotate(frame, detections)
                     frame = label.annotate(frame, detections, labels=labels)
+            if footer:
+                _draw_footer(frame, footer)
+            if poster is not None and poster_lo <= i <= poster_hi:
+                n = len(group) if group is not None else 0
+                if n > poster_best[0]:
+                    poster_best = (n, frame.copy())
             sink.write_frame(frame)
+    if poster is not None and poster_best[1] is not None:
+        cv2.imwrite(str(poster), poster_best[1], [cv2.IMWRITE_JPEG_QUALITY, 88])
     print(f"wrote annotated video -> {out}")
     return out
 
@@ -228,10 +291,14 @@ def main() -> None:
     ap.add_argument("--style", choices=["box", "fifa"], default="fifa",
                     help="box = debug rectangles+traces; fifa = clean chevron+label markers")
     ap.add_argument("--no-labels", action="store_true", help="fifa: chevron only, hide labels")
+    ap.add_argument("--footer", default=None, help="one line of text burned in along the bottom")
+    ap.add_argument("--mp4v", action="store_true", help="legacy mp4v writer (default: H.264)")
+    ap.add_argument("--poster", type=Path, default=None, help="also save a poster jpg")
     args = ap.parse_args()
     run(args.video, args.tracks, args.out, args.trace_length, not args.no_traces,
         teams=args.teams, identities=args.identities, marks=args.marks,
-        style=args.style, show_labels=not args.no_labels)
+        style=args.style, show_labels=not args.no_labels, footer=args.footer,
+        h264=not args.mp4v, poster=args.poster)
 
 
 if __name__ == "__main__":

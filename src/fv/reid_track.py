@@ -29,17 +29,16 @@ COLUMNS = ["frame", "track_id", "class_id", "confidence", "x1", "y1", "x2", "y2"
 
 def _build_tracker(device: str, reid_weights: str, half: bool,
                    track_buffer: int, appearance_thresh: float):
-    from boxmot.reid import ReID
-    from boxmot.trackers.tracker_zoo import create_tracker, get_tracker_config
+    from pathlib import Path as _P
+    from boxmot.trackers.tracker_zoo import create_tracker, get_tracker_config  # boxmot 16.0.x
 
-    reid = ReID(weights=reid_weights, device=device, half=half)
     params = yaml.safe_load(open(get_tracker_config("botsort")))
     params = {p: v["default"] for p, v in params.items()}
     # Keep a lost track alive longer than the 1s default so short pans/occlusions
     # are bridged by the tracker itself; ReID appearance gate stays strict.
     params["track_buffer"] = track_buffer
     params["appearance_thresh"] = appearance_thresh
-    tracker = create_tracker("botsort", reid_model=reid.model, device=device,
+    tracker = create_tracker("botsort", reid_weights=_P(reid_weights), device=device,
                              half=half, evolve_param_dict=params)
     return tracker
 
@@ -85,10 +84,14 @@ def run(
         dets = by_frame.get(idx, np.empty((0, 6), dtype=float))
         res = tracker.update(dets, frame)  # BoT-SORT: needs consecutive frames+imgs
         if len(res):
-            xyxy = np.asarray(res.xyxy, dtype=float)
-            ids = np.asarray(res.id, dtype=int)
-            confs = np.asarray(res.conf, dtype=float)
-            clss = np.asarray(res.cls, dtype=int)
+            if isinstance(res, np.ndarray):          # boxmot 16: (N,8) x1 y1 x2 y2 id conf cls idx
+                xyxy, ids = res[:, :4].astype(float), res[:, 4].astype(int)
+                confs, clss = res[:, 5].astype(float), res[:, 6].astype(int)
+            else:                                     # older boxmot: Results object
+                xyxy = np.asarray(res.xyxy, dtype=float)
+                ids = np.asarray(res.id, dtype=int)
+                confs = np.asarray(res.conf, dtype=float)
+                clss = np.asarray(res.cls, dtype=int)
             for (x1, y1, x2, y2), tid, cf, cl in zip(xyxy, ids, confs, clss):
                 rows.append({"frame": idx, "track_id": int(tid), "class_id": int(cl),
                              "confidence": float(cf), "x1": x1, "y1": y1, "x2": x2, "y2": y2})
