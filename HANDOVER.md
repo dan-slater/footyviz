@@ -34,21 +34,20 @@ poll → done, stats.json, Range 206, CORS, traversal 404, `/etc/passwd` rejecte
 - Possession is a proxy: COCO ball detector hits 63–76% of frames incl. some false positives.
 - The CV-only identity in `fv.job` (no VLM) gives 21/27, not the VLM-reviewed ~23 reference.
 
-**Exp 13 (GK-role pre-pass): IN PROGRESS, not yet run.** Key is in `.env`; `gemini-3.1-pro-preview` answers.
-Reconstructed run-11 baseline (the July driver is lost; `roster_v3` has no CLI):
-- Track set = the 57 tracks in `data/tracks/context_night/` (= `identities_neutral_night.parquet`
-  rows) and includes spectators 19 and 28. Run 11 = 24 identities. **Keeper track 14 is merged into A-4
-  with outfield tracks 10 and 12**, which is the tangle to fix.
-- `data/out/participant_classification.csv` already labels 14 = GK (tight-crop VLM, "gloves");
-  track 16 (O) also got a "GOALKEEPER" reply that was discarded as unparseable. `motion` column: 14 = 62.6 px
-  vs hundreds for outfield (geometry signal).
-- Plan: driver = `roster.load_context(identities_night_desc.npz, teams_reid_night, jersey_night_0_1800,
-  identities_vlm_night_vlmfp)` + `roster_v3.cooccur_veto(reid_night_0_1800)` + views loaded from
-  `context_night/t{tid}_{k}.jpg` → **pre-pass**: low-motion candidates + neutral VLM role question on
-  the context views ("where is the boxed person standing?") → lock GK(s), exclude them, then
-  `roster_v3.cluster_team` per team (emb_gate 0.55, min_conf 0.6, max_calls 40), GK = own `<team>-GK`
-  identity, `roster._name_clusters` + `_emit` → `identities_gklock_night.parquet`. Also re-run a
-  same-day control without the pre-pass (VLM is stochastic). Then add VARIANTS run 13 in build_exp_tracker.py.
+**Exp 13 (GK-role pre-pass): DONE 2026-10-09** (`python -m fv.gk_lock`, VARIANTS run 13).
+- Pre-pass: neutral role question on each track's 3 context views + pan-cancelled relative-motion
+  gate (≤ slice median 3.25 px/frame). VLM voted keeper for 12 and 14 (both in-goal, 0.99); gate kept 14 only.
+- **Keeper left the tangle:** run 11 A-4 = {10,12,14} → same-day control A-6 = {14,48} → exp 13 **A-GK = {14}**.
+- Counts: **exp 13 = 40, same-day control = 43** (`--control`, identical code minus the pre-pass), July run 11 = 24.
+  **The control does not reproduce 24**: same inputs (333 vetoed pairs match the July commit), but the VLM now
+  rejects most merges and every team hits the 40-call cap. Identity counts are dominated by VLM run-to-run
+  variance; compare variants against a same-day control. The B/O differences (17→13, 4→5) are that noise; the
+  pre-pass only changes team A (22 = 22, but 14 is now its own GK row instead of merged with outfield 48).
+- Follow-up: track 12 ("diving to defend", 0.99) failed the motion gate (3.9) and is probably the keeper's second
+  tracklet. Loosen the gate (e.g. ≤ 1.5× median, or skip it at conf ≥ 0.95), then re-run. Also raise max_calls or
+  log rejected-merge reasons to see why acceptance dropped since July.
+- Outputs (data/, not committed): `tracks/identities_{gklock,ctrl11}_night{,_table}.parquet` + `.json` decision
+  logs; `out/ident_gklock_fifa_h264.mp4`, `out/ident_gklock_frame{0200,1100}.jpg`.
 
 ## 2026-07-02 SESSION UPDATE — dashboards, PhD report, pivot back to experiments
 **Two living HTML docs (self-contained claude.ai Artifacts, regenerable):**
