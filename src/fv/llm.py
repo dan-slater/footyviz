@@ -36,6 +36,27 @@ import numpy as np
 # image file, or already-encoded PNG/JPEG bytes.
 ImageLike = "np.ndarray | str | bytes"
 
+_REPO_ENV = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+
+
+def _load_repo_env(path: str = _REPO_ENV) -> None:
+    """Fill unset env vars from this repo's own gitignored .env (KEY=VALUE lines).
+
+    Keys come only from here or the caller's environment — never from another
+    project's .env."""
+    if not os.path.exists(path):
+        return
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            v = v.strip().strip('"').strip("'")
+            if v and not os.environ.get(k.strip()):
+                os.environ[k.strip()] = v
+
+
 _DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o-mini",
@@ -170,8 +191,7 @@ class GeminiClient(LLMClient):
                 "GEMINI_API_KEY is not set. Export it before enabling the Gemini "
                 "backend, e.g.:\n"
                 "  export GEMINI_API_KEY=...\n"
-                "A key exists in ~/projectx-restaurant-portal/.env if you want to "
-                "source it:  grep GEMINI_API_KEY ~/projectx-restaurant-portal/.env"
+                "or put it in this repo's gitignored .env (see .env.example)."
             )
         try:
             from google import genai
@@ -209,7 +229,7 @@ class OpenAIClient(LLMClient):
         if not key:
             raise RuntimeError(
                 "OPENAI_API_KEY is not set. Export it before enabling the OpenAI "
-                "backend (a key exists in ~/ukko-assets/.env.agent)."
+                "backend, or put it in this repo's gitignored .env (see .env.example)."
             )
         try:
             from openai import OpenAI
@@ -296,4 +316,5 @@ def get_llm(config: dict) -> LLMClient | None:
             f"unknown llm.provider {provider!r}; expected one of {list(_BACKENDS)}"
         )
     model = llm.get("model") or _DEFAULT_MODELS[provider]
+    _load_repo_env()
     return _BACKENDS[provider](model)

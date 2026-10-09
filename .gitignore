@@ -16,3 +16,12 @@ venv/
 .DS_Store
 data/out/_dash_cache/
 data/out/dashboard.html
+
+# never commit media / tensors / secrets
+*.mp4
+*.parquet
+*.npz
+*.pth
+.env
+.env.*
+!.env.example
