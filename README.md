@@ -112,9 +112,9 @@ what worked (neutral prompts, whole-grid review, context crops, a geometric co-o
 
 ## Demo
 
-Two pre-rendered 60 s results from the test match, a **dusk** slice (frames 20000–21800, the
-brightest stretch; the match has no full-daylight footage) and a floodlit
-**night** slice, are shown on the project page. To reproduce the day slice, run the
+Two pre-rendered 60 s results from the test match, a **dusk** slice (frames 20000–21800;
+the match has no full-daylight footage) and a floodlit
+**night** slice, are shown on the project page. To reproduce the dusk slice, run the
 `fv.job` command above. For the night slice, use `--start-s 0 --end-s 60`.
 
 ## Research notes

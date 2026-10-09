@@ -1,4 +1,4 @@
-# football-vision — RUNBOOK
+# footyviz (football-vision) — RUNBOOK
 
 Operational guide: environment, how to run each stage, config, outputs, gotchas.
 For project *state / decisions*, see `HANDOVER.md`. For a visual architecture tour, see the
@@ -14,12 +14,12 @@ For project *state / decisions*, see `HANDOVER.md`. For a visual architecture to
 | Local Mac copy | `/Users/ds/football-vision` — original M0 scaffold + `system-overview.html` + pulled `data/out/*.mp4` only. **NOT the full code** — the identity/LLM work lives on zulzi. |
 | GPU | RTX 4090, 24 GB, on `zulzi-gpu` (Tailscale `100.120.149.46`) |
 | venv | `~/football-vision/.venv` (uv-managed, **Python 3.12** — 3.14 has no torch wheels) |
-| Gemini key | sourced from `~/projectx-restaurant-portal/.env` (`GEMINI_API_KEY`), model `gemini-3.1-pro-preview`. **Borrowed** — see HANDOVER open items. |
+| Keys | repo-local gitignored `.env` only (`GEMINI_API_KEY=`, `OPENAI_API_KEY=`; template `.env.example`), auto-loaded by `fv.llm`. **Never** source another project's `.env`. The VLM layer is off by default and `fv.job` never enables it. |
 
 ### Box access
 - Normal: `ssh zulzi-gpu` (Tailscale).
 - **If direct SSH times out** (Tailscale hiccup on the Mac), hop: `ssh devboxv2 'ssh zulzi-gpu "…"'` — devboxv2 stays on the tailnet and can reach zulzi.
-- **Disk is tight (~14 G free, 86 % used).** Never stage large files on zulzi; delete `mp4v` intermediates; render only to H.264. Pull artifacts to the Mac to review.
+- Disk: ~325 G free (2026-10). Still render only to H.264 (the overlay writer does this by default now).
 
 ### Driving the box
 Work is done through a persistent `claude` factory line (`ORCH-fv`) via the
@@ -36,8 +36,9 @@ cd ~/football-vision
 curl -LsSf https://astral.sh/uv/install.sh | sh          # if uv missing
 ~/.local/bin/uv venv --python 3.12 .venv
 ~/.local/bin/uv pip install -e .
-# extras added during the build:
-~/.local/bin/uv pip install boxmot easyocr google-genai spandrel imageio-ffmpeg
+# extras for the research identity stack + optional API (boxmot 16.0.11 is pinned in pyproject:
+# boxmot 25.x moved ReID/tracker_zoo and breaks reid_track/identity):
+~/.local/bin/uv pip install -e ".[api,vlm,sr]" easyocr
 # torch CUDA build (if cuda.is_available() is False):
 ~/.local/bin/uv pip install torch --index-url https://download.pytorch.org/whl/cu124
 # deno (for yt-dlp's YouTube n-challenge -> unlocks 1080p):
@@ -48,6 +49,41 @@ Verify GPU: `.venv/bin/python -c "import torch;print(torch.cuda.is_available(),t
 ---
 
 ## 2. Running the pipeline
+
+### One job end to end (the product entry point)
+```bash
+.venv/bin/python -m fv.job --url "https://www.youtube.com/watch?v=hhaWMwLlugE" \
+  --start-s 666.667 --end-s 726.667 --out data/jobs/demo_day     # or --url data/raw/<file>.mp4
+```
+~55 s for a 60 s clip on the 4090 (detect 25 s, reid+identity 15 s, stats 5 s, render 10 s).
+Writes `overlay.mp4` (H.264, ≤2.2 Mb/s ≈ 9 MB/min), `poster.jpg`, `roster.jpg`, `crop_*.jpg`,
+`stats.json` (schema: `API.md`), plus intermediates (`tracks.parquet`, `tracks_ball.parquet`,
+`reid.parquet`, `teams.parquet`, `identities*.parquet`). Cached source: `data/raw/<id>_720.mp4`.
+**zulzi's IP is bot-walled by YouTube** ("confirm you're not a bot"): new URLs need
+`--cookies cookies.txt`; existing sources are reused from `data/raw/` without a network call.
+Whistles use the clip's audio, else the sibling `<id>_1080.mp4` (the 720p file has no audio).
+
+### Job API (optional, local)
+`fv.api` = FastAPI queue over `fv.job` (one GPU job at a time, subprocess per job, state in
+`data/jobs/<id>/{job.json,progress.json,job.log}`), contract in `API.md`. On zulzi it runs in
+tmux session **`footyviz-api`** on **127.0.0.1:8790**, log `~/orch-scratch/footyviz-api.log`:
+```bash
+tmux new-session -d -s footyviz-api -c ~/football-vision \
+  "PYTHONWARNINGS=ignore .venv/bin/python -m fv.api --port 8790 2>&1 | tee -a ~/orch-scratch/footyviz-api.log"
+curl -s 127.0.0.1:8790/health
+curl -s -XPOST 127.0.0.1:8790/jobs -H 'content-type: application/json' \
+  -d '{"url":"data/raw/hhaWMwLlugE_720.mp4","start_s":0,"end_s":20}'      # -> {"id": ...}
+curl -s 127.0.0.1:8790/jobs/<id>                                          # poll
+curl -s 127.0.0.1:8790/jobs/<id>/files/stats.json
+```
+Via the API a local `url` must live under `data/raw/`. Max clip `FOOTYVIZ_MAX_CLIP_S` (180).
+Restart = `tmux kill-session -t footyviz-api` then the line above (queued jobs re-queue; a job
+that was mid-run is marked error).
+
+### Demo drop for the web line
+`~/orch-scratch/footyviz-demo/{day,night}/` = copies of `data/jobs/demo2_{day,night}/`
+(overlay.mp4, poster.jpg, roster.jpg, stats.json, crop_*.jpg). Day = frames 20000–21800 (dusk),
+night = frames 0–1800.
 
 All commands from `~/football-vision`, using `.venv/bin/python`. Crops for identity/OCR come
 from the **1080p** file; fast passes use 720p.
@@ -82,7 +118,7 @@ PATH="$HOME/.deno/bin:$PATH" .venv/bin/yt-dlp --ffmpeg-location "$FFLOC" \
 Latest/best entry point is the neutral-prompt + context + co-occurrence path (`roster_v3.py` /
 `identity.py`). Requires the Gemini key exported:
 ```bash
-export GEMINI_API_KEY=$(grep '^GEMINI_API_KEY=' ~/projectx-restaurant-portal/.env | cut -d= -f2-)
+# put GEMINI_API_KEY=... in ~/football-vision/.env (gitignored); fv.llm loads it
 # (exact invocation is wired in roster_v3/identity — the fv line knows it; see git log for the
 #  command used per run. Outputs: data/tracks/identities_<variant>_night.parquet (+ _table).)
 ```
@@ -157,7 +193,8 @@ re-run. Reuses the video cache in `data/out/_dash_cache/`.
 ## 5. Gotchas (bite-marks)
 - **Python 3.12 only** (uv-pinned). System python is 3.14 → no torch wheels.
 - **`basicsr` is broken** with modern torch (`functional_tensor` import). Use **`spandrel`** to load Real-ESRGAN. Don't reinstall basicsr (it left a 6 G cache once).
-- **Disk**: delete mp4v intermediates; ~14 G free only.
+- **boxmot**: pinned 16.0.11 — 25.x moved `ReID`/`tracker_zoo`; 16.0.11 `tracker.update` returns an (N,8) ndarray (handled in reid_track).
+- **YouTube bot wall** on zulzi: pass `--cookies` to `fv.job`, or reuse `data/raw/`.
 - **yt-dlp 1080p** needs deno (n-challenge) + imageio-ffmpeg (`--ffmpeg-location`).
 - **Gemini is a leading-prompt risk** — ask neutrally, feed geometry as fact (see HANDOVER lessons).
 - **Overlay VideoSink is video-only** — audio handled separately (events).

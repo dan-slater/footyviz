@@ -1,8 +1,38 @@
-# football-vision — HANDOVER / STATE
+# footyviz (football-vision) — HANDOVER / STATE
 
 Living state doc. Pairs with `RUNBOOK.md` (how to run) and the dossier artifact
 (https://claude.ai/code/artifact/4a561329-21be-4376-acb9-2c92c80756d7).
-Last updated: 2026-07-02.
+Last updated: 2026-10-09.
+
+## 2026-10-09 — footyviz: open-source product + runner (ORCH-fv-pipeline line)
+**Product decision (Daniel):** no public jobs. The repo (github.com/dan-slater/footyviz, MIT) is the
+product; people run it on their own box with their own keys. The web page (sibling line
+ORCH-fv-web, `~/code/footyviz-web`) is a demo show-off page built against `API.md` + the demo drop.
+
+**Built (all committed on main, not pushed):**
+- `API.md`: contract v1 incl. the full `stats.json` schema (the web line mocks against it).
+- `fv.job`: the main CLI. URL or local file + window → `overlay.mp4` (H.264, honesty footer),
+  `poster.jpg`, `roster.jpg`, `crop_*.jpg`, `stats.json`; prints progress, writes `progress.json`.
+- `fv.stats`: possession proxy (nearest player to YOLO "sports ball"), pan-compensated distance
+  (phase correlation; metres from an assumed 25 m visible width), 32×18 team heatmaps, roster.
+- `fv.detect_track`: ball (COCO 32) detected in the same pass → `<tracks>_ball.parquet` (untracked).
+- `fv.overlay`: H.264 writer (capped 2.2 Mb/s), footer, poster, cleaner label fallback.
+- `fv.api`: optional local queue (127.0.0.1:8790, tmux `footyviz-api`) with Range serving.
+- `.env` (gitignored) + `.env.example` for keys; the borrowed restaurant-portal key pointer is gone.
+- README rewritten as the product page ("Run it on your match"); project renamed footyviz 0.2.0.
+
+**Proven:** venv rebuilt (torch 2.14 cu130, 4090 OK); detect_track smoke (300 frames, 8.7 s);
+`fv.job` dusk slice (f20000–21800) 21 identities, night slice (f0–1800) 27 identities, ~55 s
+each, overlay ~8.9 MB each → `~/orch-scratch/footyviz-demo/{day,night}/`; API: health, POST,
+poll → done, stats.json, Range 206, CORS, traversal 404, `/etc/passwd` rejected.
+
+**Open / caveats:**
+- The match has **no real daylight**: the "day" demo is dusk. Decision 1 (daytime test) can't be
+  answered from this video; it needs a second match.
+- YouTube bot-walls zulzi's IP → new URLs need `--cookies`; `source.title` falls back to the video id.
+- Team clustering still lets spectators / ref into A/B on some clips (night roster B-8/B-13).
+- Possession is a proxy: COCO ball detector hits 63–76% of frames incl. some false positives.
+- The CV-only identity in `fv.job` (no VLM) gives 21/27, not the VLM-reviewed ~23 reference.
 
 ## 2026-07-02 SESSION UPDATE — dashboards, PhD report, pivot back to experiments
 **Two living HTML docs (self-contained claude.ai Artifacts, regenerable):**
@@ -95,7 +125,7 @@ players in cold-weather hoodies, ~35 px figures, heavy auto-pan. The methodology
 1. **Daytime slice test** — *highest value.* Sharper, kits/numbers legible; tests whether ~23 is the clip or the method.
 2. **Move to stats** — possession / heatmaps / distance; team-level ready without perfect IDs.
 3. **Fix the double-A-4 / keeper labeling bug** — small, clean. *Concrete approach (from the fv line):* **lock the GK role first** (keeper = defined by standing-in-goal geometry, via context crops), then **exclude that keeper track from the outfield grey-hoodie merges**, and only *then* run neutral grouping — i.e. run the GK-role lock as a pre-pass before grouping so the goalkeeper (track 14) can't tangle into a duplicate outfield row.
-4. **Own Gemini key** — currently borrowing `~/projectx-restaurant-portal/.env`; give the project its own gitignored key. (User was checking which GCP project the key belongs to — "sorted separately".)
+4. **Own Gemini key** — *done in code 2026-10-09:* keys come only from the repo's gitignored `.env` (`.env.example`). The repo has no key yet; the VLM path needs one put there.
 5. **Scoreboard** — *investigated & ruled out (2026-07-02).* The top-center lit board is most likely a **drinks advert**, not a scoreboard: ~140 px even at the sharpest pan, bloomed, and registration/temporal-averaging recovers no digits under the bloom (there's nothing there to read). Only reopen if you point at a specific timestamp where you can personally see two clearly-different digits (e.g. a "2" or "3") — then I zoom straight to it. Evidence crops on zulzi `data/out/`: `sb3_panel_compare.jpg` (registered straddle test), `sb3_montage.jpg` (top-12 sharpest), `sb3_best_00_f720_t1107.jpg` (crispest), `sb3_panel_*.jpg`, `sb3_digits_*.jpg`. No code changed for this.
 6. **~~Reseed the ORCH-fv factory line~~** — *done 2026-07-02:* the heavy `ORCH-fv` (~647 k) and `ORCH-sb` (~248 k) lines were retired. Spin a **fresh** line on demand (see Infra recap); don't revive the old ones.
 
@@ -104,5 +134,5 @@ players in cold-weather hoodies, ~35 px figures, heavy auto-pan. The methodology
 - GPU: single RTX 4090. venv `.venv` (uv, py3.12).
 - Access: `ssh zulzi-gpu`; fallback hop `ssh devboxv2 'ssh zulzi-gpu …'`.
 - Driven via a `remote-tmux-orchestrator` factory line. **The old `ORCH-fv`/`ORCH-sb` lines were retired 2026-07-02** — spin a fresh line when you need one (`factory.sh` / the skill), don't revive the heavy ones. (`metro` on zulzi belongs to a different project — leave it alone.)
-- Gemini `gemini-3.1-pro-preview`, key from restaurant-portal `.env`.
+- Gemini `gemini-3.1-pro-preview`, key from this repo's gitignored `.env` (none set as of 2026-10-09).
 - Dossier artifact source: `/Users/ds/football-vision/system-overview.html`.
