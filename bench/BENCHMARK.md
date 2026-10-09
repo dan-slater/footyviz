@@ -32,7 +32,7 @@ window leaves ±60 s around the default 900–1020 for stoppage shifts.
 every label also stores source seconds.
 
 ### 0.1 Probed windows (2026-10-09)
-Landed so far: D1, D2, B1. C1 is still copying. The train windows are blocked: the Mac is
+All four eval windows have landed: D1, D2, B1, C1. The train windows are blocked: the Mac is
 bot-walled too, pending a decision on cookies.
 
 Every number below is measured over the eval span 900–1020 s:
@@ -45,10 +45,11 @@ These are probe numbers, not GT.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | A1 | hhaWMwLlugE | V1 (ad boards: The Greek, City Grill, Stiles) | floodlit night, flare | pink/orange bibs vs white + grey hoodies, keeper odd kit | 48.4 | 37.4 | 162 | 80 | 7.8 | 110 / 159 / 262 | 22/30 |
 | B1 | mzcJ8_wyOaw | V3 (caged roof pitch, flats behind) | **night under floodlights**, faint dusk sky in the top corners only, heavy motion blur | white vs **black** (dark kit on dark turf), red keeper | **37.9** | **26.4** | **105** | 98 | 9.2 | 110 / 155 / 249 | 14/31 |
+| C1 | GQfni7JdYvY | V1 (same boards as A1) | low golden sun, **fence/pole shadows striping the pitch**, glare top-right, panorama wedges | red/orange bibs vs **mixed light-blue and royal-blue** shirts, hi-vis keeper; spectators by the goal in red/blue | 60.8 | 38.3 | 752 | 91 | 9.3 | 107 / 157 / 307 | **13/31** |
 | D1 | c6IV1mQ3GjM | V2 (orange clubhouse, low wall) | hard sun, **long hard shadows** | **no kits: casual mixed clothes** (white, red, pink, black, green) | 95.8 | 39.3 | **771** | 79 | 9.6 | 93 / 147 / 264 | 16/31 |
 | D2 | gjd12dkMNNI | V1 (same boards as A1) | overcast daylight, **wet-lens haze** over the lower middle, low colour | light blue vs black with pink trim | 109.6 | 41.6 | 547 | **41** | 9.1 | 115 / 160 / 291 | 29/31 |
 
-Container facts for the stream-copied windows (the same for all three):
+Container facts for the stream-copied windows (the same for all four):
 - 244.27 s long, 7,319 video frames.
 - Timestamps are **re-zeroed**: the first pts is 0.056 s, which is B-frame delay, and there is
   **no edit list**, so the source offset is not stored in the file.
@@ -61,6 +62,7 @@ Container facts for the stream-copied windows (the same for all three):
   past the requested 1080 s end. ✓
 - Therefore source 900.000 s = **window frame 1923**, and the 120 s eval clip is window frames
   1923–5518 (3,596 frames at 29.97 fps). See §7 for the confirmation step.
+- C1 checks out the same way: last pts 244.200 → 1080.04 s.
 
 What the probe changes:
 - **Players are much bigger than I first estimated.** Detections at 1080p are about 90–290 px
@@ -78,12 +80,17 @@ What the probe changes:
     task on both a light/image tier (measured: luma + sharpness bands) and a kit tier
     (*clean kits* / *bibs or mixed* / *no kits*), and pick the tier by measurement plus a
     recorded eyeball note, not by thumbnail.
-- **At least three venues**: V1 (A1 and D2), V2 (D1) and V3 (B1). Venue is a manifest field, so
+- **C1 fits tier C as intended**: sharp (Laplacian 752), but the shadow stripes pull the mean
+  luma down to 61 and cut through players. It has the **lowest ball rate** (13/31), so the
+  detector loses the ball in shadow.
+- **At least three venues**: V1 (A1, C1 and D2), V2 (D1) and V3 (B1). V1 carries three of the
+  five eval windows. Venue is a manifest field, so
   a venue-held-out score is possible later (§4).
-- **Ball detection rate varies 45–94%** with the plain COCO detector, and is lowest on sunny D1
-  (shadows, small far ball) and on dark B1. So T2 will separate detectors well.
-- None of the three eval spans is a stoppage on the 10 s contact sheets: live play throughout,
-  so no window shift is needed so far.
+- **Ball detection rate varies 42–94%** with the plain COCO detector. It is lowest on the
+  shadowed daylight clips (C1 42%, D1 52%) and dark B1 (45%), and highest on overcast D2 (94%).
+  So hard shadows hurt the ball more than darkness does, and T2 will separate detectors well.
+- None of the four eval spans is a stoppage on the 10 s contact sheets: live play throughout,
+  so no window shift is needed.
 
 ### 0.2 Reference window A1 (first probe)
 - 1920×1080, 30 fps, H.264, AAC stereo. YouTube's ceiling here is 1080p at about 2–4 Mb/s, so
@@ -630,7 +637,8 @@ RT-DETR-x + SAM2 only.
    runs, which for now means the reference and train matches only, be on the board as an
    unlabelled stability and throughput check?
 7. **Tiers from measurement, two axes** (§0.1):
-   - B1 measures darker and softer than the A reference, D2 is hazy, and D1 has no kits.
+   - B1 measures darker and softer than the A reference, D2 is hazy, D1 has no kits, and C1 is
+     sharp but shadow-striped.
    - Proposal: an image tier (measured luma + sharpness bands, confirmed by eye) and a separate
      kit tier (clean kits / bibs or mixed / no kits), with every metric reported on both.
    - The alternative is to keep the eyeball tiers and record the measurements only.
