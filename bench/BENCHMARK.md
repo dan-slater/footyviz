@@ -12,12 +12,27 @@ variance control** ahead of speed. Each decision lists its reason.
 
 ## 0. What the footage looks like (probed, not assumed)
 
-**Sources are full matches.** The control plane relays whole 1080p matches with audio
-(about 40 min and about 1.1 GB each) to `~/footyviz-bench-data/raw/<tier>_<videoid>.mp4`.
-A `.tmp` suffix means the copy is still in progress. The reference match is already at
-`~/football-vision/data/raw/hhaWMwLlugE_1080.mp4`. `fv.bench` cuts every benchmark window from
-these files (§1, §7). So far only the reference window `A1` (900–1020 s, cut from the local
-1080p) has been probed; each relayed match is probed once it lands. Findings:
+**Sources (as of 2026-10-09).** The Mac uplink runs at about 0.25 MB/s, so for now the control
+plane relays **4-minute source windows** instead of full matches:
+- Each window covers source seconds 840–1080 at 1080p with audio, and lands at
+  `~/footyviz-bench-data/windows/<tier>_<videoid>_840-1080.mp4`, in the order D1, D2, B1, C1,
+  then the train matches.
+- The windows are **stream-copied**, so each one actually starts on the keyframe at or before
+  840 s. Its true source start is read from the container (§7).
+- **Full train matches** relay overnight to `raw/<tier>_<videoid>.mp4`.
+- Full **eval** matches are not scheduled.
+- The reference match is already complete locally at
+  `~/football-vision/data/raw/hhaWMwLlugE_1080.mp4`.
+
+`fv.bench` cuts every labelled 120 s window from these sources (§1, §7). The 4-minute source
+window leaves ±60 s around the default 900–1020 for stoppage shifts.
+
+**Frame rate varies by match**: the reference is 30 fps, and gjd12dkMNNI is 29.97 fps. So frame
+indices are always clip-relative at the clip's own fps, and every label also stores source
+seconds.
+
+Probed so far: the reference window `A1` (900–1020 s, cut from the local 1080p). Each relayed
+window gets probed when it lands. Findings:
 
 - 1920×1080, 30 fps, H.264, AAC stereo. YouTube's ceiling here is 1080p at about 2 Mb/s, so the
   source is already heavily compressed.
@@ -32,7 +47,7 @@ these files (§1, §7). So far only the reference window `A1` (900–1020 s, cut
   and a person standing by the goal. In this window, frame 0 is already floodlit night.
 - A permanent "veo" watermark sits bottom-right.
 - **Video titles carry team names and the final score**, e.g. "Swans 4 vs Mamelodi Sundowners 8".
-  That gives free match-level labels, but the same teams recur across matches (see §3).
+  That gives free match-level labels, but the same teams recur across matches (see §4).
 
 Consequences that shape the design:
 
@@ -50,26 +65,29 @@ height, ball visibility rate and colour cast. Phase 2 also re-checks each relaye
 
 ## 1. Match set and windows v1
 
-The unit of the benchmark is the **match**: one full video, one tier, one split. Inside a match
+The unit of the benchmark is the **match**: one video, one tier, one split. Inside a match
 there are three kinds of window:
 - **Labelled eval windows**: 120 s, human GT (§3). Default `900–1020 s`. The table below lists
   these.
-- **Full-match runs**: the method runs over the whole match. There is no box GT, but these runs
+- **Full-match runs**: the method runs over a whole match. There is no box GT, but these runs
   measure throughput, cap hits and lighting drift across the match, and they score the one
   full-match label we get for free: the **final score in the title**, kept for the later
-  goals/events task. The audio also makes whistles scoreable later.
+  goals/events task. The audio also makes whistles scoreable later. **For now only possible on
+  the reference match and on train matches once they relay overnight.** Eval matches exist
+  only as 840–1080 source windows until the uplink allows more.
 - **Train material**: *the whole* of every train match (4 × about 40 min ≈ 160 min,
-  pseudo-labelled). The unlabelled parts of **eval** matches are **eval-reserved** and never
+  pseudo-labelled, after the overnight relay; until then, their 840–1080 windows). The unlabelled parts of **eval** matches are **eval-reserved** and never
   used for training, because they are the same people.
 
 **Choosing the window.** The 900 s default is fixed in advance, *before* any method sees the
 footage, so the window is not picked to flatter a method. Two exceptions, recorded in the
 manifest:
 - If 900–1020 is mostly a stoppage (more than 30 s with the ball out of play or teams
-  regrouping), shift the window +60 s at a time until it isn't.
-- A match whose lighting changes during the game gets a **second** labelled window in the other
-  lighting, scored under that window's tier. The reference match's dusk-to-night change is the
-  obvious case; whether it adds a window is decided when the full matches are probed.
+  regrouping), shift it to **960–1080**, then **840–960**. Those are the only shifts the 840–1080
+  source window allows, so beyond that the match is swapped out, not stretched.
+- A match whose lighting changes during the game *could* get a second labelled window in the
+  other lighting. This needs a full eval match, so it is deferred. The reference match is
+  already floodlit at frame 0, so it is a single tier A.
 
 Phase 2 may add more 120 s eval windows per eval match. Each one costs about 35 Daniel-minutes
 (§3), so v1 starts with one per match.
@@ -85,16 +103,18 @@ Phase 2 may add more 120 s eval windows per eval match. Each one costs about 35 
 | C2 | C day/shadow | 2u32W0O7ZfQ | 900–1020 | Hellas v FC Broadsville | train |
 | D1 | D easy | c6IV1mQ3GjM | 900–1020 | Salahds Wins Scrums v Pique Blinders | eval |
 | D2 | D easy | gjd12dkMNNI | 900–1020 | Salahds win scram v Sibas kids fc | eval (forced: shares Salahds with D1) |
-| D3 | D easy | *replacement, TBD* | 900–1020 | must not share a team with any eval clip | train |
+| D3 | D easy | YwkdvL6Un3g | 900–1020 | Unathletico v The Wizards (2026-09-27) | train |
 
 - **A0** is the night slice used by runs 1–13. It is scored and shown separately so we keep
   continuity with that history. It is **excluded from the tier-A and overall aggregates**, so one
   match does not count twice.
-- **D3**: both D clips share the Salahds team, so neither can be train while the other is eval.
-  Candidates from `thumb_scores.csv`: league-style title, luma > 95, edges > 25, no team shared
-  with the eval set. `YwkdvL6Un3g` (Unathletico v The Wizards), `b6_9iO20jGQ` (Jenna Tolls v
-  Flappys) and `vWyHM8saydI` (Banana Banana v Stiles). These need an eyeball check and a relay
-  of the full match from the Mac.
+- **D3 = YwkdvL6Un3g.** Both D eval matches share the Salahds team, so neither could be train.
+  D3 came from the `thumb_scores.csv` filter: league-style title, luma > 95, edges > 25, no team
+  shared with the eval set. The control plane eyeballed it at 900 s: clear daylight, blue vs
+  black kits.
+  - `vWyHM8saydI` was rejected for a strong magenta cast. It is kept as a possible later C-tier
+    colour-cast case.
+  - `b6_9iO20jGQ` is the spare.
 - **Why 2-minute windows at 900 s**: about 15 minutes in, so play has settled and the window is
   inside the first half. Two minutes is long enough for real identity churn: players leave and
   re-enter view, and subs come on. It is short enough to label. Identity over 40 minutes, with
@@ -361,8 +381,8 @@ train match.
 - **Venue**: every Rookie clip is the same few Cape Town venues, so venue leakage is unavoidable
   inside this channel. That is documented. An out-of-channel eval clip is the future fix.
 - **v1**: eval matches = hhaWMwLlugE (A1, A0), mzcJ8_wyOaw (B1), GQfni7JdYvY (C1),
-  c6IV1mQ3GjM (D1), gjd12dkMNNI (D2). Train matches = O4YGl9Ps93A, vS4NP3wkBIA, 2u32W0O7ZfQ and
-  the D3 replacement, each used **in full**.
+  c6IV1mQ3GjM (D1), gjd12dkMNNI (D2). Train matches = O4YGl9Ps93A, vS4NP3wkBIA, 2u32W0O7ZfQ,
+  YwkdvL6Un3g (D3), each used **in full** once relayed.
   The split is decided per match, never per frame or window.
 - **Growth**: `thumb_scores.csv` has 1,631 league-style titles. Filter out rugby, school
   festivals and 11-a-side. New train matches are drawn from teams that never appear in eval;
@@ -487,13 +507,34 @@ RT-DETR-x + SAM2 only.
   - labels (JSON);
   - code and docs.
 - **Data layout (on the box, outside git):**
-  - `raw/<tier>_<videoid>.mp4` holds the full matches.
-  - `clips/<clip_id>.mp4` holds the windows cut from them.
+  - `windows/<tier>_<videoid>_840-1080.mp4` holds the relayed 4-minute source windows.
+  - `raw/<tier>_<videoid>.mp4` holds full matches: train matches (overnight relay) and the
+    reference match (symlinked from `~/football-vision/data/raw/`).
+  - `clips/<clip_id>.mp4` holds the labelled 120 s windows cut from either source.
   - `frames/`, `prelabels/` and `results/` hold everything derived.
+- **Re-timing the stream-copied windows.** A `-c copy` cut starts on the keyframe at or before
+  840 s, so the first frame is *not* at 840.000.
+  1. `fv.bench` reads the true source time of the first presented frame from the container:
+     the first video packet's pts, plus the MP4 edit list (`elst`) if the muxer wrote one to
+     hide the pre-roll.
+  2. It stores that time as `src_t0` in the manifest. Eval windows are then cut by **source
+     time**: clip frame 0 is the first frame with source pts ≥ 900.000 s, using a frame-accurate
+     re-encode (libx264 crf 12, audio kept).
+  3. The cut must have exactly round(120 × fps) frames, at the stream's real rate (30 or
+     29.97).
+  - *Validation before any labels are made*: on the reference match (full file on the box),
+    stream-copy an 840–1080 window the same way the Mac does, re-time and recut it, and
+    require that it is **frame-identical in content** to A1 cut directly from the full file
+    (per-frame pHash distance 0–2 and the same frame count). If the Mac's ffmpeg command or
+    version differs, the relay's exact command line goes in the manifest.
+- **What labels key on.** Clip frame indices from source 900.000 s, at the clip fps. Every label
+  file also carries `start_s` / `fps`, so a rebuild from a full download (public users) or from
+  a 840–1080 window (this box) gives the same frames. The pHash check below enforces that.
 - **Fetch script**: `python -m fv.bench fetch --manifest bench/manifest.json [--cookies …]`
   works in two steps.
   1. Get each **full match** with yt-dlp (1080p plus audio), or skip that if
-     `raw/<tier>_<id>.mp4` already exists, as on zulzi where the control plane relays them.
+     `raw/<tier>_<id>.mp4` or a covering `windows/<tier>_<id>_<a>-<b>.mp4` already exists, as on
+     zulzi where the control plane relays them.
   2. Cut every window in the manifest with a frame-accurate re-encode (libx264 crf 12, the
      recipe used for A1), and verify each window's frame count and pHashes.
 
@@ -517,10 +558,11 @@ RT-DETR-x + SAM2 only.
    - off-pitch people as `ignore` for detection but scored as false participants in T3.
 2. **Approve the time budget**: about 3.2 h of cheap labels now, about 2.7 h dense later.
    Alternatively, start with D1 + A1 only (about 70 min) to shake out the page.
-3. **Team-disjoint splits**: this forces both D clips into eval and needs a **D3 replacement**
-   relayed (candidates in §1).
+3. **Team-disjoint splits**: this forces both D matches into eval. D3 = YwkdvL6Un3g has been
+   chosen by the control plane, so the remaining question is only the rule itself.
 4. **VLM budget** for the B1/B2 repeats (est. $30–60), and N = 3 repeats as the default.
 5. Is **A0** (the run 1–13 slice) worth labelling, at about 18 min?
-6. Full matches: is **one labelled 120 s window per eval match** (default 900 s, shift only for
-   stoppages, plus a second window if the lighting changes) the right v1? And should whole-match
-   runs be on the board as an unlabelled stability and throughput check?
+6. Windows: is **one labelled 120 s window per eval match** the right v1? It defaults to 900 s
+   and shifts only for stoppages, within the relayed 840–1080 source. And should whole-match
+   runs, which for now means the reference and train matches only, be on the board as an
+   unlabelled stability and throughput check?
