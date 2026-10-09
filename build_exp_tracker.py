@@ -89,20 +89,23 @@ VARIANTS = [
  (11,"Neutral + context + veto","v_neut","identities_neutral_night.parquet","ident_neutral_fifa_h264.mp4",
   "ident_neutral_frame",["0200","1100"],
   ["roster_montage_A.jpg","roster_montage_B.jpg","roster_montage_O.jpg"],
-  "LATEST. Neutral prompt + full-frame context crops + co-occurrence veto (two tracklets >100px apart on-screen can't be one player).","latest"),
+  "Neutral prompt + full-frame context crops + co-occurrence veto (two tracklets >100px apart on-screen can't be one player).","vlm"),
+ (13,"GK-role pre-pass","v_gk","identities_gklock_night.parquet","ident_gklock_fifa_h264.mp4",
+  "ident_gklock_frame",["0200","1100"],[],
+  "LATEST. Keeper locked BEFORE grouping (neutral context-view role question + relative-motion gate), excluded from outfield merges, own A-GK row. "
+  "Track 14 left the tangled row: run 11 A-4 = {10,12,14}; same-day control A-6 = {14,48}; here A-GK = {14}. "
+  "Count 40 vs same-day control 43 (fv.gk_lock --control). The control does NOT reproduce July's 24: every team hits the 40-call VLM cap "
+  "with most merges rejected, so counts are dominated by VLM run-to-run variance; compare exp 13 to the control, not to run 11. "
+  "Track 12 was also voted keeper ('diving to defend', 0.99) but failed the motion gate (3.9 > median 3.25 px/frame), so it stays an outfield singleton (likely the keeper's second tracklet: loosen the gate next).","latest"),
 ]
 
 # Upcoming experiments — rendered as "planned" tabs (hypothesis / method / expected), no data yet.
 # run#, label, status, hypothesis, method, expected
 PLANNED = [
  (12,"Daytime slice","NEXT",
-  "The ~23 night ceiling is a <b>footage limit, not a method flaw</b>. Every identity run so far was measured on frames 0–1800 — the single <b>darkest, grainiest 60&nbsp;s</b> of the match (dusk, floodlit, bloomed, ~35&nbsp;px figures). Clear golden-hour daylight footage exists later in the video and has never been tested.",
+  "The ~23 night ceiling is a <b>footage limit, not a method flaw</b>. Every identity run so far was measured on frames 0–1800 — the single <b>darkest, grainiest 60&nbsp;s</b> of the match (dusk, floodlit, bloomed, ~35&nbsp;px figures). A later window (frames ~20000–21800) is brighter <b>dusk</b>, not full daylight (checked 2026-10-09: this match has no daylight footage), so a clean lighting test needs a second match.",
   "Re-run the full identity pipeline (reid → teams → jersey → participant → roster_v3) with <b>identical run-11 settings</b> on a clear-daylight window (frames ~20000–21800, 60&nbsp;s — matched to the night-slice length so <b>lighting is the only changed variable</b>). Reuses the existing full-match detections; no re-detect.",
   "≈14–17 stable IDs ⇒ the night ~23 is a <b>footage ceiling</b> and the methodology is validated. Still ≈23 ⇒ a <b>systematic method over-count</b> — the real bug to chase. Either outcome is decisive."),
- (13,"GK-role pre-pass","QUEUED",
-  "The goalkeeper (track 14) tangles into a <b>duplicate A-4 / keeper row</b> because grouping runs before the keeper's role is locked, so the GK gets merged/split as if an outfield grey-hoodie player.",
-  "Run a <b>GK-role lock as a pre-pass</b>: identify the keeper by standing-in-goal geometry via full-frame context crops, <b>exclude that track from the outfield grey-hoodie merges</b>, then run the neutral grouping. Night slice; reuses existing data (cheap).",
-  "Removes the duplicate keeper identity → count down ~1 and a <b>cleaner, correct roster</b>. A quality fix, judged on roster correctness, not just the raw count."),
 ]
 
 # ── Algorithm model ──────────────────────────────────────────────────────────
@@ -163,8 +166,8 @@ ALGO = {
     "prose":"<b>Identical to run 11's algorithm</b> — the only variable changed is the <b>input footage</b>. Re-run the whole pipeline on a clear-daylight 60 s slice (frames ~20000–21800) instead of the dark floodlit opening (frames 0–1800). This controls for method and isolates lighting/clarity: ≈14–17 ⇒ footage ceiling (thesis confirmed); still ≈23 ⇒ systematic method over-count.",
     "params":["run-11 pipeline","daytime frames 20000–21800","lighting = only variable"]},
  13:{"new":{"07","09"},
-    "prose":"<b>GK-role pre-pass</b> before grouping. Lock the keeper by <b>standing-in-goal geometry</b> (decided from full-frame context crops), <b>exclude that track from the outfield grey-hoodie merges</b>, then run the neutral grouping — so the goalkeeper (track 14) can no longer tangle into a duplicate A-4 outfield row.",
-    "params":["GK geometry lock","exclude GK from outfield merges","pre-pass"]},
+    "prose":"<b>GK-role pre-pass</b> before grouping (<code>fv.gk_lock</code>). Each tracklet's 3 full-frame boxed context views get one <b>neutral role question</b> (where is this person standing, what role?) with its <b>pan-cancelled relative motion</b> stated as a measured fact. Locked = goalkeeper + in-goal-mouth + conf ≥ 0.6 + motion ≤ slice median. Locked keepers are <b>excluded from the outfield merges</b> and get their own <code>A-GK</code> row; then the unchanged neutral grouping runs. <b>Result:</b> track 14 locked and out of the tangle (run 11: A-4 = 10+12+14; same-day control: A-6 = 14+48; exp 13: A-GK = 14 alone). 40 IDs vs 43 for a same-day control: the July 24 is not reproducible today (VLM merge acceptance dropped; every team hits the call cap).",
+    "params":["neutral role Q on context views","relative-motion gate ≤ median","exclude GK from outfield merges","same-day control"]},
 }
 
 # ── Glossary ─────────────────────────────────────────────────────────────────
