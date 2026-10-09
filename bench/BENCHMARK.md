@@ -27,20 +27,73 @@ plane relays **4-minute source windows** instead of full matches:
 `fv.bench` cuts every labelled 120 s window from these sources (§1, §7). The 4-minute source
 window leaves ±60 s around the default 900–1020 for stoppage shifts.
 
-**Frame rate varies by match**: the reference is 30 fps, and gjd12dkMNNI is 29.97 fps. So frame
-indices are always clip-relative at the clip's own fps, and every label also stores source
-seconds.
+**Frame rate varies by match**: the reference is 30 fps, and the three relayed windows are
+29.97 fps (30000/1001). So frame indices are always clip-relative at the clip's own fps, and
+every label also stores source seconds.
 
-Probed so far: the reference window `A1` (900–1020 s, cut from the local 1080p). Each relayed
-window gets probed when it lands. Findings:
+### 0.1 Probed windows (2026-10-09)
+Landed so far: D1, D2, B1. C1 is still copying. The train windows are blocked: the Mac is
+bot-walled too, pending a decision on cookies.
 
-- 1920×1080, 30 fps, H.264, AAC stereo. YouTube's ceiling here is 1080p at about 2 Mb/s, so the
-  source is already heavily compressed.
-- Veo panoramic auto-pan. Roughly half the pitch is in view at a time, with 5–9 people on screen.
-  Players are about **40–90 px tall**, and smaller at the far side.
-- The ball is **about 8–12 px**, often motion-blurred, and often merged with a foot.
+Every number below is measured over the eval span 900–1020 s:
+- Image statistics: one frame every 4 s (30 frames), with the bottom watermark strip excluded.
+- Person statistics: yolo11m at imgsz 1280, conf 0.30, on the same frames.
+
+These are probe numbers, not GT.
+
+| clip | match | venue (by eye) | light | kits | luma | RMS contrast | Laplacian var | saturation | persons / frame | player height p10 / median / p90 (px) | frames with a ball detection |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A1 | hhaWMwLlugE | V1 (ad boards: The Greek, City Grill, Stiles) | floodlit night, flare | pink/orange bibs vs white + grey hoodies, keeper odd kit | 48.4 | 37.4 | 162 | 80 | 7.8 | 110 / 159 / 262 | 22/30 |
+| B1 | mzcJ8_wyOaw | V3 (caged roof pitch, flats behind) | **night under floodlights**, faint dusk sky in the top corners only, heavy motion blur | white vs **black** (dark kit on dark turf), red keeper | **37.9** | **26.4** | **105** | 98 | 9.2 | 110 / 155 / 249 | 14/31 |
+| D1 | c6IV1mQ3GjM | V2 (orange clubhouse, low wall) | hard sun, **long hard shadows** | **no kits: casual mixed clothes** (white, red, pink, black, green) | 95.8 | 39.3 | **771** | 79 | 9.6 | 93 / 147 / 264 | 16/31 |
+| D2 | gjd12dkMNNI | V1 (same boards as A1) | overcast daylight, **wet-lens haze** over the lower middle, low colour | light blue vs black with pink trim | 109.6 | 41.6 | 547 | **41** | 9.1 | 115 / 160 / 291 | 29/31 |
+
+Container facts for the stream-copied windows (the same for all three):
+- 244.27 s long, 7,319 video frames.
+- Timestamps are **re-zeroed**: the first pts is 0.056 s, which is B-frame delay, and there is
+  **no edit list**, so the source offset is not stored in the file.
+- Keyframes fall every **5.005 s (150 frames)**.
+- The start of the truncated full `raw/D_gjd12dkMNNI.mp4` shows the source uses the same fixed
+  150-frame GOP from 0 s.
+- So window frame 0 is the source keyframe at or before 840 s, i.e. **835.835 s**, source frame
+  25,050.
+- Cross-check: 835.835 + the last window pts (244.20–244.27) = 1080.04–1080.10 s, which is just
+  past the requested 1080 s end. ✓
+- Therefore source 900.000 s = **window frame 1923**, and the 120 s eval clip is window frames
+  1923–5518 (3,596 frames at 29.97 fps). See §7 for the confirmation step.
+
+What the probe changes:
+- **Players are much bigger than I first estimated.** Detections at 1080p are about 90–290 px
+  tall (p10–p90), not 40–90 px; the earlier figure was misread from downscaled thumbnails.
+  Far-side players are probably under-detected at conf 0.3, and the GT will show by how much.
+  So the T1 size buckets become **< 80 / 80–150 / > 150 px**, and AP75 becomes a meaningful
+  secondary metric.
+- **"Tier by eye" disagrees with the measurements.**
+  - B1 (labelled "dusk") is **darker, flatter and softer than the tier-A reference** (luma 38 vs
+    48, Laplacian 105 vs 162). On image quality it is an A-tier clip.
+  - D2 (labelled "easy") is overcast with lens haze and the lowest saturation of the four.
+  - D1 is the only clip that is easy on image quality, but its players wear **casual clothes
+    with no team kit**, so team assignment from colour is *hardest* there.
+  - Image quality and kit separability are **separate axes**. Proposal (§8.7): report every
+    task on both a light/image tier (measured: luma + sharpness bands) and a kit tier
+    (*clean kits* / *bibs or mixed* / *no kits*), and pick the tier by measurement plus a
+    recorded eyeball note, not by thumbnail.
+- **At least three venues**: V1 (A1 and D2), V2 (D1) and V3 (B1). Venue is a manifest field, so
+  a venue-held-out score is possible later (§4).
+- **Ball detection rate varies 45–94%** with the plain COCO detector, and is lowest on sunny D1
+  (shadows, small far ball) and on dark B1. So T2 will separate detectors well.
+- None of the three eval spans is a stoppage on the 10 s contact sheets: live play throughout,
+  so no window shift is needed so far.
+
+### 0.2 Reference window A1 (first probe)
+- 1920×1080, 30 fps, H.264, AAC stereo. YouTube's ceiling here is 1080p at about 2–4 Mb/s, so
+  the source is already heavily compressed. A1 is a crf 12 re-encode from the local full file.
+- Veo panoramic auto-pan. Roughly half the pitch is in view at a time, with 5–10 people on
+  screen.
+- The ball is **about 8–15 px**, often motion-blurred, and often merged with a foot.
 - **Stitch/lens ghosts at the frame edges**: half-transparent duplicate people near the goal
-  when the camera turns (end of the clip). Floodlight flare and bloom sit over the right half.
+  when the camera turns. Floodlight flare and bloom sit over the right half. The D windows also
+  show **black wedges**, the uncovered panorama corners, when the camera turns hard.
 - **Kits are not clean.** One side wears pink or orange bibs over mixed shirts. The other wears
   white shirts and grey hoodies, plus a maroon shirt. Keepers wear their own colours.
 - **Non-players are always in view**: subs and spectators behind the fence and on the walkway,
@@ -51,15 +104,18 @@ window gets probed when it lands. Findings:
 
 Consequences that shape the design:
 
-- Small objects and soft labels make IoU 0.5 the right threshold. AP@0.5:0.95 would mostly
-  measure how sloppy the labels are.
-- Off-pitch people and ghosts need an explicit **ignore** class.
-- Team labels must be kit **descriptions** per clip, not fixed colours.
+- IoU 0.5 is the primary threshold, because the ball and motion-blurred limbs make tight boxes
+  ambiguous. With players 90–290 px tall, **AP75** is a meaningful secondary. AP@0.5:0.95 is not
+  used.
+- Off-pitch people, ghosts and panorama wedges need an explicit **ignore** class.
+- Team labels must be kit **descriptions** per clip, not fixed colours. Some clips have no kit
+  at all (D1).
 - Splits must be **team-disjoint**, not only match-disjoint.
 
 Per-clip objective quality stats go into the manifest, so the tiers can be checked against
-numbers rather than eyeballed: mean luma, RMS contrast, Laplacian sharpness, median GT player box
-height, ball visibility rate and colour cast. Phase 2 also re-checks each relayed clip by eye.
+numbers rather than eyeballed: mean luma, RMS contrast, Laplacian sharpness, saturation, Lab
+cast, median GT player box height, ball visibility rate and the source bitrate. Phase 2 also
+re-checks each relayed clip by eye.
 
 ---
 
@@ -156,9 +212,12 @@ Phase 2 may add more 120 s eval windows per eval match. Each one costs about 35 
   - **Recall@0.5** at the method's own operating threshold, since that is what downstream
     stages consume.
   - Precision at the operating point.
-  - Recall split by box height: < 40 px, 40–80 px, > 80 px.
-- **Why not AP50:95**: hand boxes on 40 px, blurred players carry about 3–5 px of label noise.
-  Tight IoU levels would score label noise.
+  - Recall split by box height: < 80 px, 80–150 px, > 150 px (buckets set from the §0.1
+    probe).
+  - **AP75** as a secondary metric.
+- **Why not AP50:95**: hand boxes on motion-blurred players carry several px of label noise,
+  so the tightest IoU levels would score label noise. Players are 90–290 px tall, so AP75 is
+  still meaningful.
 - **Why ignore off-pitch people here**: a COCO person detector is *right* to find them.
   Rejecting non-participants is scored in T3 (role), where that decision actually lives.
 
@@ -167,7 +226,7 @@ Phase 2 may add more 120 s eval windows per eval match. Each one costs about 35 
   (position known from context, e.g. at a player's feet) or `out_of_view`.
 - **Metric.**
   - **Ball recall**: share of `visible` labels with a predicted ball centre within
-    **max(12 px, 0.25 × median player height)**.
+    **max(12 px, 0.1 × median GT player height)** (≈ 15 px at the probed sizes).
   - **Precision**: share of predictions on labelled frames that land near a visible or occluded
     ball.
   - **F1**.
@@ -514,9 +573,13 @@ RT-DETR-x + SAM2 only.
   - `frames/`, `prelabels/` and `results/` hold everything derived.
 - **Re-timing the stream-copied windows.** A `-c copy` cut starts on the keyframe at or before
   840 s, so the first frame is *not* at 840.000.
-  1. `fv.bench` reads the true source time of the first presented frame from the container:
-     the first video packet's pts, plus the MP4 edit list (`elst`) if the muxer wrote one to
-     hide the pre-roll.
+  1. `fv.bench` reads the true source time of the first presented frame. The relayed windows
+     have re-zeroed timestamps and **no edit list** (§0.1), so the container alone does not
+     give it. Recovery: take the largest source keyframe time ≤ 840 s. The source GOP is a
+     fixed 150 frames (5.005 s at 29.97), giving 835.835 s. Accept it only if
+     `src_t0 + last_pts ≈ 1080 s` (± 2 frames) **and** the control plane's `ffprobe` keyframe
+     list of the source around 840 s confirms it. An edit list, if a future relay writes one,
+     takes precedence.
   2. It stores that time as `src_t0` in the manifest. Eval windows are then cut by **source
      time**: clip frame 0 is the first frame with source pts ≥ 900.000 s, using a frame-accurate
      re-encode (libx264 crf 12, audio kept).
@@ -566,3 +629,8 @@ RT-DETR-x + SAM2 only.
    and shifts only for stoppages, within the relayed 840–1080 source. And should whole-match
    runs, which for now means the reference and train matches only, be on the board as an
    unlabelled stability and throughput check?
+7. **Tiers from measurement, two axes** (§0.1):
+   - B1 measures darker and softer than the A reference, D2 is hazy, and D1 has no kits.
+   - Proposal: an image tier (measured luma + sharpness bands, confirmed by eye) and a separate
+     kit tier (clean kits / bibs or mixed / no kits), with every metric reported on both.
+   - The alternative is to keep the eyeball tiers and record the measurements only.
