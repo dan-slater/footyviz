@@ -34,6 +34,22 @@ poll → done, stats.json, Range 206, CORS, traversal 404, `/etc/passwd` rejecte
 - Possession is a proxy: COCO ball detector hits 63–76% of frames incl. some false positives.
 - The CV-only identity in `fv.job` (no VLM) gives 21/27, not the VLM-reviewed ~23 reference.
 
+**Exp 13 (GK-role pre-pass): IN PROGRESS, not yet run.** Key is in `.env`; `gemini-3.1-pro-preview` answers.
+Reconstructed run-11 baseline (the July driver is lost; `roster_v3` has no CLI):
+- Track set = the 57 tracks in `data/tracks/context_night/` (= `identities_neutral_night.parquet`
+  rows) and includes spectators 19 and 28. Run 11 = 24 identities. **Keeper track 14 is merged into A-4
+  with outfield tracks 10 and 12**, which is the tangle to fix.
+- `data/out/participant_classification.csv` already labels 14 = GK (tight-crop VLM, "gloves");
+  track 16 (O) also got a "GOALKEEPER" reply that was discarded as unparseable. `motion` column: 14 = 62.6 px
+  vs hundreds for outfield (geometry signal).
+- Plan: driver = `roster.load_context(identities_night_desc.npz, teams_reid_night, jersey_night_0_1800,
+  identities_vlm_night_vlmfp)` + `roster_v3.cooccur_veto(reid_night_0_1800)` + views loaded from
+  `context_night/t{tid}_{k}.jpg` → **pre-pass**: low-motion candidates + neutral VLM role question on
+  the context views ("where is the boxed person standing?") → lock GK(s), exclude them, then
+  `roster_v3.cluster_team` per team (emb_gate 0.55, min_conf 0.6, max_calls 40), GK = own `<team>-GK`
+  identity, `roster._name_clusters` + `_emit` → `identities_gklock_night.parquet`. Also re-run a
+  same-day control without the pre-pass (VLM is stochastic). Then add VARIANTS run 13 in build_exp_tracker.py.
+
 ## 2026-07-02 SESSION UPDATE — dashboards, PhD report, pivot back to experiments
 **Two living HTML docs (self-contained claude.ai Artifacts, regenerable):**
 - **Experiment tracker** (PRIMARY / current focus): https://claude.ai/code/artifact/220dbdc8-10a9-4d8a-aa00-86d65f7aa6e1
