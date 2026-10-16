@@ -656,3 +656,5 @@ All seven approved as recommended:
 7. **Tiers on two measured axes**: an image tier (luma + sharpness bands, confirmed by eye) and a kit tier (clean kits / bibs or mixed / no kits); every metric reported on both. Eyeball A–D names stay as labels for the matches.
 
 Also: yt-dlp on the Mac may use `--cookies-from-browser chrome`; cookies never leave the Mac. Train windows (A2, B2, C2, D3, 840–1080 s) are fetched on the Mac and relayed into `~/footyviz-bench-data/windows/`.
+
+**Amendment (2026-10-16, later):** the Chrome-cookies grant was withdrawn. `--cookies-from-browser` needs the Chrome Safe Storage key from the macOS Keychain, which decrypts every Chrome cookie, so the fetch was stopped after A2. A2 O4YGl9Ps93A (840–1080 s, 69.4 MB) is relayed; B2, C2 and D3 are still unfetched. Options: a youtube.com-only cookies.txt export via a browser extension, a plain retry once the bot wall lifts, or proceed without the train matches (Phase 2 D1 + A1 labelling does not need them).
