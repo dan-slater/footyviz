@@ -1,0 +1,5 @@
+# B4a: ByteTrack only, no re-track, no identity fusion (identity = raw track id). Deterministic.
+name: b4-bytetrack
+inherits: b0-cv-job.yaml
+tracker:  {name: bytetrack, params: {}}
+identity: {method: none}

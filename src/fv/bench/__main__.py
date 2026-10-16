@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("score", help="score a run against labels")
     p.add_argument("--run", required=True, nargs="+", help="run name(s) under runs/")
     p.add_argument("--write-results", action="store_true", help="append to bench/RESULTS.md")
+    p.add_argument("--labels", default=None, help="labels dir (default ~/footyviz-bench-data/labels)")
     a = ap.parse_args(argv)
 
     if a.cmd == "check":
@@ -60,7 +61,9 @@ def main(argv: list[str] | None = None) -> int:
         return run.main(a.method, a.batch, a.clip, a.repeats, force=a.force)
     if a.cmd == "score":
         from . import score
-        return score.main(a.run, write=a.write_results)
+        from pathlib import Path
+        return score.main(a.run, write=a.write_results,
+                          labels=Path(a.labels).expanduser() if a.labels else score.LABELS)
     return 2
 
 

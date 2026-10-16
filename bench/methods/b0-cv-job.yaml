@@ -1,0 +1,7 @@
+# B0: exactly fv.job's stages (the shipped product, anchor row). Deterministic.
+name: b0-cv-job
+stochastic: false
+detector: {weights: yolo11m.pt, imgsz: 640, conf: 0.30, ball_conf: 0.10}
+tracker:  {name: botsort, params: {track_buffer: 90, appearance_thresh: 0.25}}   # ByteTrack -> BoT-SORT/OSNet re-track
+teams:    {method: kmeans_color, k: null}
+identity: {method: cv_fusion, params: {threshold: 0.42}}

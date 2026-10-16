@@ -1,0 +1,4 @@
+# B4b: BoT-SORT + OSNet as the tracker, no identity fusion (identity = raw track id). Deterministic.
+name: b4-botsort
+inherits: b0-cv-job.yaml
+identity: {method: none}

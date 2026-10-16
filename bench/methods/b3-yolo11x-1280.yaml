@@ -1,0 +1,4 @@
+# B3: detector swap only (rest = B0). Overlaps the pre-labeller's detector: read with the blind-kf bias estimate.
+name: b3-yolo11x-1280
+inherits: b0-cv-job.yaml
+detector: {weights: yolo11x.pt, imgsz: 1280}
