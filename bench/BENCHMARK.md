@@ -642,3 +642,17 @@ RT-DETR-x + SAM2 only.
    - Proposal: an image tier (measured luma + sharpness bands, confirmed by eye) and a separate
      kit tier (clean kits / bibs or mixed / no kits), with every metric reported on both.
    - The alternative is to keep the eyeball tiers and record the measurements only.
+
+### 8.1 Decisions (Daniel, 2026-10-16)
+
+All seven approved as recommended:
+
+1. Metric set approved: keyframe person-ID labels (all-pairs P/R + keyframe IDF1); off-pitch people `ignore` for detection, scored as false participants in T3.
+2. Label budget: **D1 + A1 first (about 70 min)** to shake out the labelling page and scorer; the rest of the cheap labels and the dense pass follow once the first scores land.
+3. Team-disjoint splits: the rule stands; both D matches in eval, D3 = YwkdvL6Un3g train.
+4. VLM budget $30–60 for the B1/B2 repeats; **N = 3 repeats** default, always with a same-day control.
+5. A0 is not labelled.
+6. One labelled 120 s window per eval match (default 900 s, shifted only for stoppages, within the relayed 840–1080 s source). Whole-match runs on the reference and train matches go on the board as an unlabelled stability + throughput check.
+7. **Tiers on two measured axes**: an image tier (luma + sharpness bands, confirmed by eye) and a kit tier (clean kits / bibs or mixed / no kits); every metric reported on both. Eyeball A–D names stay as labels for the matches.
+
+Also: yt-dlp on the Mac may use `--cookies-from-browser chrome`; cookies never leave the Mac. Train windows (A2, B2, C2, D3, 840–1080 s) are fetched on the Mac and relayed into `~/footyviz-bench-data/windows/`.
