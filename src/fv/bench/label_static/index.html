@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fvlabel</title>
+<style>
+:root{--bg:#111418;--panel:#1a1f26;--line:#2c333d;--fg:#e6e9ee;--dim:#8b94a3;--t1:#4ea1ff;--t2:#ff8a3d;--ign:#7d8590;--uns:#e05cf0;--new:#ffd23f;--ok:#3ecf8e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 system-ui,sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header select,header button{background:#222831;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:3px 8px;font:inherit}
+header button.on{border-color:var(--t1);color:var(--t1)}
+#status{margin-left:auto;color:var(--dim)}
+#status.dirty{color:var(--new)}
+kbd{background:#2a313b;border:1px solid #3a4250;border-radius:3px;padding:0 4px;font:11px ui-monospace,monospace}
+.view{display:none}.view.on{display:flex}
+/* gallery */
+#gallery{flex-wrap:wrap;gap:8px;padding:10px;align-content:flex-start}
+.card{background:var(--panel);border:2px solid var(--line);border-radius:6px;padding:4px;min-width:120px;max-width:100%}
+.card.focus{border-color:#fff}
+.card h4{margin:0 0 4px;font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer}
+.card h4 .sw{width:10px;height:10px;border-radius:2px;background:var(--dim)}
+.card.T1 h4 .sw{background:var(--t1)}.card.T2 h4 .sw{background:var(--t2)}
+.card .crops{display:flex;flex-wrap:wrap;gap:3px}
+.crop{position:relative;cursor:pointer;border:2px solid transparent;border-radius:3px}
+.crop img{height:96px;display:block;border-radius:2px}
+.crop.sel{border-color:var(--new)}
+.crop span{position:absolute;left:1px;bottom:1px;background:#000a;font-size:10px;padding:0 3px;border-radius:2px}
+.card.ignore{border-style:dashed}
+#preview{position:fixed;right:10px;bottom:10px;max-height:60vh;border:2px solid var(--line);display:none;z-index:9;background:#000}
+/* keyframes */
+#kf{gap:8px;padding:8px;align-items:flex-start}
+#canvwrap{position:relative;flex:1;min-width:0}
+#cv{width:100%;display:block;cursor:crosshair;border-radius:4px}
+#mag{position:absolute;right:6px;top:6px;width:220px;height:220px;border:2px solid #fff6;border-radius:4px;pointer-events:none;background:#000}
+#banner{padding:4px 8px;margin-bottom:6px;border-radius:4px;background:var(--panel)}
+#banner.blind{background:#5a1d6a}
+#side{width:300px;flex:none;max-height:calc(100vh - 60px);overflow:auto}
+#side .p{display:flex;align-items:center;gap:6px;padding:2px 4px;border-radius:4px;cursor:pointer}
+#side .p:hover{background:#ffffff10}
+#side .p img{height:44px;border-radius:2px}
+#side .p.here{outline:1px solid #ffffff30}
+#side .p b{min-width:34px}
+#strip{display:flex;gap:2px;flex-wrap:wrap;margin-top:6px}
+#strip i{width:14px;height:10px;background:#333;border-radius:2px;cursor:pointer}
+#strip i.done{background:var(--ok)}#strip i.blind{outline:1px solid var(--uns)}#strip i.cur{background:#fff}
+#help{color:var(--dim);font-size:12px;margin-top:6px}
+#buf{color:var(--new);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <b>fvlabel</b>
+  <select id="clipsel"></select>
+  <button id="bg" data-v="gallery">Gallery <kbd>G</kbd></button>
+  <button id="bk" data-v="kf">Keyframes <kbd>K</kbd></button>
+  <span id="info"></span>
+  <span id="status">loading…</span>
+</header>
+
+<div id="gallery" class="view"></div>
+<img id="preview" alt="">
+
+<div id="kf" class="view">
+  <div id="canvwrap">
+    <div id="banner"></div>
+    <canvas id="cv"></canvas>
+    <canvas id="mag" width="220" height="220"></canvas>
+    <div id="strip"></div>
+    <div id="help"></div>
+  </div>
+  <div id="side"></div>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+let CID = null, PL = null, W = null, view = "gallery";
+let dirty = false, saveTimer = null, lastAct = Date.now();
+
+// ---------------------------------------------------------------- load/save
+async function loadClips() {
+  const cl = await (await fetch("/api/clips")).json();
+  $("#clipsel").innerHTML = cl.map(c => `<option value="${c.id}">${c.id} (${c.kf_done} kf done)</option>`).join("");
+  const want = location.hash.slice(1) || (cl[0] && cl[0].id);
+  if (want) { $("#clipsel").value = want; await loadClip(want); }
+}
+async function loadClip(cid) {
+  const r = await (await fetch("/api/clip/" + cid)).json();
+  CID = cid; PL = r.prelabel; W = r.work; location.hash = cid;
+  W.seconds = W.seconds || {gallery: 0, keyframes: 0};
+  if (!Object.keys(W.people).length) seed();
+  kfi = 0; sel = null; gsel.clear(); focusP = null;
+  $("#info").textContent = `${PL.clip_id} · ${PL.video_id} · ${PL.keyframes.length} kf · kits: ${PL.kits ? Object.entries(PL.kits).map(([k,v])=>k+" "+v).join(" | ") : "?"}`;
+  imgCache = {};
+  render(); setStatus("loaded");
+}
+function seed() {
+  // proposed groups with keyframe presence -> P-ids; team guess A->T1, B->T2
+  const gs = Object.entries(PL.groups).filter(([g, v]) => v.n_kf > 0)
+    .sort((a, b) => (a[1].team_guess || "Z").localeCompare(b[1].team_guess || "Z") || b[1].n_kf - a[1].n_kf);
+  gs.forEach(([g, v], i) => {
+    const pid = "P" + String(i + 1).padStart(2, "0");
+    W.people[pid] = {team: {A: "T1", B: "T2"}[v.team_guess] || null, role: "outfield", jersey: null, from: g};
+    v.tracklets.forEach(t => { if (PL.tracklets[t].n_kf > 0) W.track_pid[t] = pid; });
+  });
+  touch();
+}
+function touch() {
+  dirty = true; setStatus("unsaved"); clearTimeout(saveTimer); saveTimer = setTimeout(save, 700);
+}
+async function save() {
+  if (!dirty) return;
+  dirty = false;
+  try {
+    const r = await (await fetch("/api/save/" + CID, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(W)})).json();
+    setStatus(r.derive_error ? "saved (derive error: " + r.derive_error + ")" :
+      `saved · ${r.kf_done}/${PL.keyframes.length} kf done · ${r.people} people · T1 ${r.true_count.T1} T2 ${r.true_count.T2} ref ${r.true_count.referee}`);
+  } catch (e) { dirty = true; setStatus("SAVE FAILED, retrying"); saveTimer = setTimeout(save, 3000); }
+}
+function setStatus(s) { $("#status").textContent = s; $("#status").className = dirty ? "dirty" : ""; }
+window.addEventListener("beforeunload", e => { if (dirty) { save(); e.preventDefault(); } });
+
+// active-time accounting: a second counts if there was input in the last 60 s
+let kfSecs = {};
+setInterval(() => {
+  if (!W || document.hidden || Date.now() - lastAct > 60000) return;
+  const k = view === "gallery" ? "gallery" : "keyframes";
+  W.seconds[k] = (W.seconds[k] || 0) + 1;
+  if (view === "kf") { const f = PL.keyframes[kfi].frame; kfSecs[f] = (kfSecs[f] || 0) + 1; }
+}, 1000);
+["keydown", "mousedown", "mousemove", "wheel"].forEach(ev => addEventListener(ev, () => lastAct = Date.now(), true));
+
+// ---------------------------------------------------------------- helpers
+const pids = () => Object.keys(W.people).sort();
+function newPid() { let i = 1; while (W.people["P" + String(i).padStart(2, "0")]) i++; return "P" + String(i).padStart(2, "0"); }
+function teamColor(t) { return t === "T1" ? "#4ea1ff" : t === "T2" ? "#ff8a3d" : "#c9d1d9"; }
+function cropUrl(t) { return `/data/${CID}/crops/t${t}.jpg`; }
+function tracksOf(pid) { return Object.keys(W.track_pid).filter(t => W.track_pid[t] === pid); }
+function gcPeople() { // drop people with no tracklets and no per-box use
+  const used = new Set(Object.values(W.track_pid));
+  Object.values(W.box).forEach(o => o.pid && used.add(o.pid));
+  Object.values(W.added).flat().forEach(b => b.pid && used.add(b.pid));
+  pids().forEach(p => { if (!used.has(p)) delete W.people[p]; });
+}
+
+// ---------------------------------------------------------------- gallery
+let gsel = new Set(), focusP = null;
+function renderGallery() {
+  const g = $("#gallery"); g.innerHTML = "";
+  const cards = pids().map(p => [p, W.people[p]]);
+  cards.sort((a, b) => (a[1].team || "Z").localeCompare(b[1].team || "Z") || a[0].localeCompare(b[0]));
+  const unassigned = Object.keys(PL.tracklets).filter(t => PL.tracklets[t].n_kf > 0 && !W.track_pid[t]);
+  const mk = (key, title, cls, tracks) => {
+    const c = document.createElement("div");
+    c.className = "card " + cls + (focusP === key ? " focus" : "");
+    c.innerHTML = `<h4><span class="sw"></span>${title}</h4><div class="crops"></div>`;
+    c.querySelector("h4").onclick = () => { focusP = key; renderGallery(); };
+    c.ondragover = e => e.preventDefault();
+    c.ondrop = e => { e.preventDefault(); const t = e.dataTransfer.getData("t"); if (!gsel.has(t)) gsel = new Set([t]); moveSel(key); };
+    const box = c.querySelector(".crops");
+    tracks.sort((a, b) => PL.tracklets[a].first - PL.tracklets[b].first).forEach(t => {
+      const tr = PL.tracklets[t], d = document.createElement("div");
+      d.className = "crop" + (gsel.has(t) ? " sel" : ""); d.draggable = true;
+      d.innerHTML = `<img loading="lazy" src="${cropUrl(t)}"><span>t${t}·${tr.n_kf}kf·${(tr.first / 30).toFixed(0)}-${(tr.last / 30).toFixed(0)}s</span>`;
+      d.onclick = e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) { if (gsel.has(t) && gsel.size === 1) gsel.clear(); else gsel = new Set([t]); } else gsel.has(t) ? gsel.delete(t) : gsel.add(t); renderGallery(); };
+      d.ondragstart = e => e.dataTransfer.setData("t", t);
+      d.onmouseenter = () => { const p = $("#preview"); p.src = cropUrl(t); p.style.display = "block"; };
+      d.onmouseleave = () => $("#preview").style.display = "none";
+      box.appendChild(d);
+    });
+    g.appendChild(c);
+  };
+  for (const [p, v] of cards) {
+    const n = tracksOf(p).reduce((s, t) => s + PL.tracklets[t].n_kf, 0);
+    mk(p, `${p} · ${v.team || "no team"} · ${v.role}${v.jersey ? " #" + v.jersey : ""} · ${n}kf`, v.team || "", tracksOf(p));
+  }
+  mk("ignore", "IGNORE (off-pitch / subs / ghosts)", "ignore", tracksOf("ignore"));
+  if (unassigned.length) mk("unassigned", "unassigned", "", unassigned);
+  $("#help").innerHTML = "";
+  helpGallery();
+}
+function helpGallery() {
+  const h = document.createElement("div");
+  h.style.cssText = "width:100%;color:var(--dim);padding:4px";
+  h.innerHTML = `Click crop = select (shift/ctrl adds) · click header = focus card · drag crop onto a card = move ·
+   <kbd>M</kbd> move selected → focused · <kbd>N</kbd> selected → new person · <kbd>X</kbd> selected → ignore ·
+   <kbd>1</kbd>/<kbd>2</kbd>/<kbd>0</kbd> team of focused (or selected's) person · <kbd>E</kbd> keeper · <kbd>F</kbd> referee ·
+   <kbd>J</kbd> jersey · <kbd>Esc</kbd> clear · <kbd>←→</kbd> focus prev/next card · <kbd>K</kbd> keyframes`;
+  $("#gallery").appendChild(h);
+}
+function moveSel(target) {
+  if (!gsel.size || !target) return;
+  if (target === "unassigned") gsel.forEach(t => delete W.track_pid[t]);
+  else gsel.forEach(t => W.track_pid[t] = target);
+  gsel.clear(); gcPeople(); touch(); renderGallery();
+}
+function personOfSelOrFocus() {
+  if (focusP && W.people[focusP]) return [focusP];
+  return [...new Set([...gsel].map(t => W.track_pid[t]).filter(p => p && W.people[p]))];
+}
+function galleryKey(e) {
+  const k = e.key.toLowerCase();
+  if (k === "m" && focusP) moveSel(focusP);
+  else if (k === "n" && gsel.size) { const p = newPid(); const any = W.track_pid[[...gsel][0]]; W.people[p] = {team: (W.people[any] || {}).team || null, role: "outfield", jersey: null}; moveSel(p); focusP = p; renderGallery(); }
+  else if (k === "x") moveSel("ignore");
+  else if (k === "1" || k === "2" || k === "0") { personOfSelOrFocus().forEach(p => W.people[p].team = k === "0" ? null : "T" + k); touch(); renderGallery(); }
+  else if (k === "e") { personOfSelOrFocus().forEach(p => W.people[p].role = W.people[p].role === "keeper" ? "outfield" : "keeper"); touch(); renderGallery(); }
+  else if (k === "f") { personOfSelOrFocus().forEach(p => W.people[p].role = W.people[p].role === "referee" ? "outfield" : "referee"); touch(); renderGallery(); }
+  else if (k === "j") { const ps = personOfSelOrFocus(); if (ps.length === 1) { const j = prompt("jersey number for " + ps[0] + " (empty = none)", W.people[ps[0]].jersey || ""); if (j !== null) { W.people[ps[0]].jersey = j.trim() || null; touch(); renderGallery(); } } }
+  else if (k === "escape") { gsel.clear(); focusP = null; renderGallery(); }
+  else if (k === "arrowright" || k === "arrowleft") {
+    const order = [...document.querySelectorAll("#gallery .card h4")].map(h => h.parentElement);
+    const keys = pids().sort((a, b) => (W.people[a].team || "Z").localeCompare(W.people[b].team || "Z") || a.localeCompare(b));
+    keys.push("ignore");
+    let i = keys.indexOf(focusP); i = k === "arrowright" ? Math.min(keys.length - 1, i + 1) : Math.max(0, i - 1);
+    focusP = keys[i]; renderGallery();
+    document.querySelector("#gallery .card.focus")?.scrollIntoView({block: "nearest"});
+  } else return false;
+  return true;
+}
+
+// ---------------------------------------------------------------- keyframes
+let kfi = 0, sel = null, buf = "", imgCache = {}, drag = null, showLabels = true, mouse = null;
+const cv = $("#cv"), ctx = cv.getContext("2d"), mag = $("#mag"), mctx = mag.getContext("2d");
+function kfBoxes(kf) {
+  const dele = new Set(W.deleted);
+  const out = kf.boxes.filter(b => !dele.has(b.bid)).map(b => Object.assign({}, b));
+  (W.added[kf.frame] || []).forEach(b => { if (!dele.has(b.bid)) out.push(Object.assign({added: true, track: null}, b)); });
+  return out.map(b => {
+    const ov = W.box[b.bid] || {};
+    const tp = b.track != null ? W.track_pid[b.track] : undefined;
+    let role = ov.role || b.role || (tp === "ignore" ? "ignore" : "player");
+    let pid = ov.pid || b.pid || (tp && tp !== "ignore" ? tp : null);
+    const box = ov.box || b.box;
+    const why = ov.why || b.why || "off_pitch";
+    const team = pid && W.people[pid] ? W.people[pid].team : (ov.team || b.team || null);
+    if (pid && W.people[pid] && W.people[pid].role === "referee") role = "referee";
+    return {bid: b.bid, box, role, pid, why, team, track: b.track, src: b.src, conf: b.conf, added: b.added};
+  }).sort((a, b) => a.box[0] - b.box[0]);
+}
+function img(f) {
+  if (!imgCache[f]) { const i = new Image(); i.src = `/data/${CID}/frames/kf_${String(f).padStart(5, "0")}.jpg`; i.onload = () => drawKf(); imgCache[f] = i; }
+  return imgCache[f];
+}
+function scale() { return cv.width / PL.width; }
+function drawKf() {
+  if (view !== "kf" || !PL) return;
+  const kf = PL.keyframes[kfi], im = img(kf.frame);
+  // preload neighbours
+  [kfi + 1, kfi + 2, kfi - 1].forEach(i => PL.keyframes[i] && img(PL.keyframes[i].frame));
+  const w = cv.clientWidth || 1200; cv.width = w; cv.height = Math.round(w * PL.height / PL.width);
+  const s = scale();
+  if (im.complete && im.naturalWidth) ctx.drawImage(im, 0, 0, cv.width, cv.height);
+  else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, cv.width, cv.height); }
+  const boxes = kfBoxes(kf);
+  ctx.font = "bold 12px system-ui"; ctx.textBaseline = "bottom";
+  for (const b of boxes) {
+    const [x1, y1, x2, y2] = b.box.map(v => v * s);
+    let col = b.role === "ignore" ? "#7d8590" : b.pid === "unsure" ? "#e05cf0" : !b.pid ? "#ffd23f" : teamColor(b.team);
+    ctx.setLineDash(b.role === "ignore" ? [4, 3] : []);
+    ctx.lineWidth = b.bid === sel ? 3 : 1.5; ctx.strokeStyle = col; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    if (b.bid === sel) { ctx.fillStyle = "#fff"; [[x1, y1], [x2, y1], [x1, y2], [x2, y2]].forEach(([x, y]) => ctx.fillRect(x - 3, y - 3, 6, 6)); }
+    if (showLabels) {
+      const lab = b.role === "ignore" ? "ign:" + b.why.replace("off_pitch", "off") : (b.pid || "?") + (b.role === "referee" ? " REF" : "") + (b.pid && W.people[b.pid] && W.people[b.pid].role === "keeper" ? " GK" : "") + (b.pid === "unsure" && b.team ? " " + b.team : "");
+      const tw = ctx.measureText(lab).width + 6;
+      ctx.fillStyle = "#000b"; ctx.fillRect(x1, y1 - 15, tw, 15);
+      ctx.fillStyle = col; ctx.fillText(lab, x1 + 3, y1 - 1);
+    }
+  }
+  ctx.setLineDash([]);
+  if (drag && drag.mode === "new") { ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 2; ctx.strokeRect(drag.x0 * s, drag.y0 * s, (drag.x1 - drag.x0) * s, (drag.y1 - drag.y0) * s); }
+  drawMag(im);
+  const done = W.kf_done[kf.frame] !== undefined;
+  $("#banner").className = kf.blind ? "blind" : "";
+  $("#banner").innerHTML = `kf ${kfi + 1}/${PL.keyframes.length} · frame ${kf.frame} · src ${kf.src_s.toFixed(1)} s · ${boxes.filter(b => b.role !== "ignore").length} players, ${boxes.filter(b => b.role === "ignore").length} ignore` +
+    (kf.blind ? " · <b>BLIND: no pre-labels, draw every person (A + drag)</b>" : "") + (done ? " · <span style='color:var(--ok)'>✓ done</span>" : "") + ` <span id="buf">${buf ? "→ P" + buf : ""}</span>`;
+  $("#strip").innerHTML = PL.keyframes.map((k, i) => `<i title="${k.frame}" data-i="${i}" class="${W.kf_done[k.frame] !== undefined ? "done" : ""} ${k.blind ? "blind" : ""} ${i === kfi ? "cur" : ""}"></i>`).join("");
+  renderSide(boxes);
+}
+function drawMag(im) {
+  mctx.fillStyle = "#000"; mctx.fillRect(0, 0, 220, 220);
+  if (!mouse || !im.complete) { mag.style.display = "none"; return; }
+  mag.style.display = "block";
+  const src = 110;  // source px shown in the 220 px loupe = 2x of full resolution
+  mctx.imageSmoothingEnabled = false;
+  mctx.drawImage(im, mouse.x - src / 2, mouse.y - src / 2, src, src, 0, 0, 220, 220);
+  mag.style.left = mouse.cx > cv.clientWidth / 2 ? "6px" : "auto"; mag.style.right = mouse.cx > cv.clientWidth / 2 ? "auto" : "6px";
+}
+function renderSide(boxes) {
+  const here = new Set(boxes.map(b => b.pid));
+  const ps = pids().sort((a, b) => (W.people[a].team || "Z").localeCompare(W.people[b].team || "Z") || a.localeCompare(b));
+  $("#side").innerHTML = `<div style="color:var(--dim);margin-bottom:4px">Click = assign selected box (shift = whole tracklet)</div>` + ps.map(p => {
+    const v = W.people[p], t = tracksOf(p)[0];
+    return `<div class="p ${here.has(p) ? "here" : ""}" data-p="${p}"><b style="color:${teamColor(v.team)}">${p}</b>${t ? `<img loading="lazy" src="${cropUrl(t)}">` : ""}<span>${v.team || "–"} ${v.role === "outfield" ? "" : v.role}${v.jersey ? " #" + v.jersey : ""}</span></div>`;
+  }).join("");
+}
+$("#side").onclick = e => { const d = e.target.closest(".p"); if (d) assign(d.dataset.p, e.shiftKey); };
+$("#strip").onclick = e => { if (e.target.dataset.i) { gotoKf(+e.target.dataset.i); } };
+function curBoxes() { return kfBoxes(PL.keyframes[kfi]); }
+function selBox() { return curBoxes().find(b => b.bid === sel); }
+function ov(bid) { return W.box[bid] = W.box[bid] || {}; }
+function setAdded(bid, patch) { // added boxes carry their fields directly
+  for (const f in W.added) { const b = W.added[f].find(x => x.bid === bid); if (b) { Object.assign(b, patch); return true; } }
+  return false;
+}
+function patchBox(bid, patch) { if (!setAdded(bid, patch)) Object.assign(ov(bid), patch); touch(); drawKf(); }
+function assign(pid, wholeTrack) {
+  const b = selBox(); if (!b) return;
+  if (!W.people[pid]) W.people[pid] = {team: null, role: "outfield", jersey: null};
+  if (wholeTrack && b.track != null) { W.track_pid[b.track] = pid; if (W.box[b.bid]) { delete W.box[b.bid].pid; delete W.box[b.bid].role; } touch(); drawKf(); }
+  else patchBox(b.bid, {pid, role: "player"});
+  nextBox();
+}
+function nextBox(d = 1) {
+  const bs = curBoxes(); if (!bs.length) { sel = null; return drawKf(); }
+  const i = bs.findIndex(b => b.bid === sel);
+  sel = bs[(i + d + bs.length) % bs.length].bid; drawKf();
+}
+function gotoKf(i) {
+  const f = PL.keyframes[kfi].frame;
+  kfi = Math.max(0, Math.min(PL.keyframes.length - 1, i)); sel = null; buf = ""; drawKf();
+}
+function markDone() {
+  const f = PL.keyframes[kfi].frame;
+  W.kf_done[f] = (W.kf_done[f] || 0) + (kfSecs[f] || 0); kfSecs[f] = 0; touch();
+  const nxt = PL.keyframes.findIndex((k, i) => i > kfi && W.kf_done[k.frame] === undefined);
+  gotoKf(nxt >= 0 ? nxt : kfi + 1);
+}
+const WHY = ["off_pitch", "ghost", "tiny", "truncated"];
+function kfKey(e) {
+  const k = e.key, b = selBox();
+  if (/^[0-9]$/.test(k)) { buf = (buf + k).slice(-2); drawKf(); return true; }
+  if (k === "Enter") {
+    if (buf && b) { assign("P" + buf.padStart(2, "0"), e.shiftKey); buf = ""; drawKf(); }
+    else if (!buf) markDone();
+    return true;
+  }
+  if (k === "Backspace" && buf) { buf = buf.slice(0, -1); drawKf(); return true; }
+  switch (k.toLowerCase()) {
+    case "tab": nextBox(e.shiftKey ? -1 : 1); return true;
+    case "arrowright": case "l": gotoKf(kfi + 1); return true;
+    case "arrowleft": case "h": gotoKf(kfi - 1); return true;
+    case " ": markDone(); return true;
+    case "z": showLabels = !showLabels; drawKf(); return true;
+    case "escape": sel = null; buf = ""; drawKf(); return true;
+    case "a": drag = {mode: "armed"}; cv.style.cursor = "copy"; return true;
+  }
+  if (!b) return false;
+  switch (k.toLowerCase()) {
+    case "i": patchBox(b.bid, {role: "ignore", why: b.role === "ignore" ? WHY[(WHY.indexOf(b.why) + 1) % WHY.length] : "off_pitch"}); return true;
+    case "p": patchBox(b.bid, {role: "player"}); return true;
+    case "x": case "delete": W.deleted.push(b.bid); touch(); nextBox(); return true;
+    case "u": { const order = [null, "T1", "T2"]; const t = b.pid === "unsure" ? order[(order.indexOf(b.team) + 1) % 3] : null; patchBox(b.bid, {pid: "unsure", role: "player", team: t}); return true; }
+    case "n": { const p = newPid(); W.people[p] = {team: null, role: "outfield", jersey: null}; assign(p, e.shiftKey); return true; }
+  }
+  return false;
+}
+function evPos(e) { const r = cv.getBoundingClientRect(), s = scale(); return {x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s, cx: e.clientX - r.left}; }
+cv.onmousedown = e => {
+  const p = evPos(e);
+  if (drag && drag.mode === "armed") { drag = {mode: "new", x0: p.x, y0: p.y, x1: p.x, y1: p.y}; return; }
+  const b = selBox(), tol = 8 / scale();
+  if (b) { // corner/edge resize of the selected box
+    const [x1, y1, x2, y2] = b.box, near = (a, v) => Math.abs(a - v) < tol;
+    const hx = near(p.x, x1) ? 0 : near(p.x, x2) ? 2 : -1, hy = near(p.y, y1) ? 1 : near(p.y, y2) ? 3 : -1;
+    const inside = p.x > x1 - tol && p.x < x2 + tol && p.y > y1 - tol && p.y < y2 + tol;
+    if (inside && (hx >= 0 || hy >= 0)) { drag = {mode: "resize", bid: b.bid, hx, hy, box: b.box.slice()}; return; }
+  }
+  // select the smallest box under the cursor
+  const hits = curBoxes().filter(b => p.x >= b.box[0] && p.x <= b.box[2] && p.y >= b.box[1] && p.y <= b.box[3])
+    .sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
+  sel = hits.length ? hits[0].bid : null; drawKf();
+};
+cv.onmousemove = e => {
+  const p = evPos(e); mouse = p;
+  if (drag && drag.mode === "new") { drag.x1 = p.x; drag.y1 = p.y; }
+  if (drag && drag.mode === "resize") { if (drag.hx >= 0) drag.box[drag.hx] = p.x; if (drag.hy >= 0) drag.box[drag.hy] = p.y; }
+  drawKf();
+  if (drag && drag.mode === "resize") { const s = scale(), [x1, y1, x2, y2] = drag.box; ctx.strokeStyle = "#fff"; ctx.strokeRect(x1 * s, y1 * s, (x2 - x1) * s, (y2 - y1) * s); }
+};
+cv.onmouseleave = () => { mouse = null; drawKf(); };
+addEventListener("mouseup", () => {
+  if (!drag) return;
+  if (drag.mode === "new") {
+    const box = [Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.max(drag.x0, drag.x1), Math.max(drag.y0, drag.y1)].map(v => Math.round(v * 10) / 10);
+    if (box[2] - box[0] > 4 && box[3] - box[1] > 4) {
+      const f = PL.keyframes[kfi].frame, bid = "a" + f + "_" + Date.now().toString(36);
+      (W.added[f] = W.added[f] || []).push({bid, box, role: "player", pid: null});
+      sel = bid; touch();
+    }
+    cv.style.cursor = "crosshair";
+  } else if (drag.mode === "resize") {
+    const [x1, y1, x2, y2] = drag.box;
+    patchBox(drag.bid, {box: [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)].map(v => Math.round(v * 10) / 10)});
+  }
+  if (drag.mode !== "armed") drag = null;
+  drawKf();
+});
+addEventListener("resize", () => view === "kf" && drawKf());
+function helpKf() {
+  $("#help").innerHTML = `<kbd>Tab</kbd> next box · click box = select · drag a corner = resize · <kbd>A</kbd>+drag = add box ·
+  digits + <kbd>Enter</kbd> = assign P-id (<kbd>Shift+Enter</kbd> = whole tracklet) · click a person on the right = assign ·
+  <kbd>N</kbd> new person · <kbd>I</kbd> ignore (again = cycle off_pitch/ghost/tiny/truncated) · <kbd>P</kbd> player ·
+  <kbd>U</kbd> unsure (again = cycle team) · <kbd>X</kbd>/<kbd>Del</kbd> delete false box ·
+  <kbd>Enter</kbd>/<kbd>Space</kbd> keyframe done → next · <kbd>←→</kbd> prev/next · <kbd>Z</kbd> labels · <kbd>G</kbd> gallery<br>
+  colours: <span style="color:var(--t1)">T1</span> <span style="color:var(--t2)">T2</span> <span style="color:var(--new)">no id</span> <span style="color:var(--uns)">unsure</span> <span style="color:var(--ign)">ignore (dashed)</span>`;
+}
+
+// ---------------------------------------------------------------- view switch + keys
+function setView(v) {
+  view = v; document.querySelectorAll(".view").forEach(d => d.classList.toggle("on", d.id === v));
+  $("#bg").classList.toggle("on", v === "gallery"); $("#bk").classList.toggle("on", v === "kf");
+  render();
+}
+function render() { if (!PL) return; if (view === "gallery") renderGallery(); else { helpKf(); drawKf(); } }
+$("#bg").onclick = () => setView("gallery"); $("#bk").onclick = () => setView("kf");
+$("#clipsel").onchange = async e => { await save(); loadClip(e.target.value); };
+addEventListener("keydown", e => {
+  if (!PL || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "g" && view !== "gallery") { setView("gallery"); return e.preventDefault(); }
+  if (k === "k" && view !== "kf") { setView("kf"); return e.preventDefault(); }
+  if ((view === "gallery" ? galleryKey(e) : kfKey(e))) e.preventDefault();
+});
+setView("gallery"); loadClips();
+</script>
+</body>
+</html>

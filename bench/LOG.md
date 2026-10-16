@@ -32,3 +32,20 @@ The two axes cross well: image {low: A1 B1, mid: C1, high: D1 D2} × kit {clean:
   - **The Rookie eval windows do not have this:** frame 0 is the I-frame at pts 0.056 and pts are uniform (checked B1 C1 D1 D2), so the 835.835 s / frame-1923 derivation holds.
   - `cut.window_check` now enforces it: frame 0 must be a keyframe and there must be no pts gaps, otherwise an eval cut is refused.
 - **A2 relay fails the check**: it starts mid-GOP, with P/B frames up to the first keyframe at window index 25 (pts 0.834). It has 7,319 frames like the others, so 835.835 is likely, but it is `src_t0_verified: false`. It is a train clip, so this is not blocking; cut warns.
+
+## 2026-10-16 — D3: pre-labeller (`fv.bench prelabel`)
+- `src/fv/bench/prelabel.py` (not a leaderboard config, per the anti-bias rule):
+  - yolo11x @ 1280, conf 0.10, every frame (`fv.detect_track`, ByteTrack);
+  - BoT-SORT + OSNet tracklets (`fv.reid_track`);
+  - kit k-means teams + CV identity fusion (`fv.teams`, `fv.identity`) → proposed people;
+  - RT-DETR-x on keyframes, union where IoU < 0.5.
+- Keyframes every 90 frames (40/clip). 3 blind keyframes per clip come from a seeded RNG and are exported with no boxes.
+- Weights: `~/footyviz-bench-data/models/{yolo11x,rtdetr-x}.pt` (downloaded via ultralytics). Worktree symlinks `yolo11m.pt` and `data/models` → main checkout (both gitignored).
+- Output:
+  - `~/footyviz-bench-data/prelabels/<id>/` holds the parquet intermediates;
+  - `~/footyviz-bench-data/labels/<id>/` holds `frames/kf_*.jpg`, `crops/t<track>.jpg` (one exemplar per tracklet) and `prelabel.json` (keyframe boxes with track/group/team guess, tracklets, groups, 1 Hz ball points for L2 later).
+
+| clip | boxes on 37 visible kf | tracklets | proposed people | blind kf | wall time |
+|---|---|---|---|---|---|
+| D1 | 386 | 94 | 29 | 270, 720, 2700 | 2.4 min (detect 67 s, reid 38 s, teams+id 21 s, RT-DETR 10 s) |
+| A1 | 287 | 116 | 32 | 90, 1440, 2430 | ~2.2 min |
