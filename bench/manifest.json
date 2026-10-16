@@ -18,7 +18,8 @@
       "luma_low": 55.0,
       "lap_low": 250.0,
       "luma_mid": 90.0
-    }
+    },
+    "status": "ready = source on the box; pending = not fetched (harness skips it)"
   },
   "team_aliases": {
     "salahds wins scrums": "salahds",
@@ -82,7 +83,8 @@
           "1800": "b69696969616466e",
           "3599": "bfdfdfcfc4040400"
         }
-      }
+      },
+      "status": "ready"
     },
     {
       "id": "B1",
@@ -106,7 +108,8 @@
         "kind": "window",
         "file": "windows/B_mzcJ8_wyOaw_840-1080.mp4",
         "fps": "30000/1001",
-        "src_t0": 835.835
+        "src_t0": 835.835,
+        "src_t0_verified": true
       },
       "label_window": {
         "start_s": 900.0,
@@ -127,7 +130,8 @@
         "n_samples": 30,
         "method": "every 4 s over label_window, bottom 8% excluded, full res"
       },
-      "image_tier": "low"
+      "image_tier": "low",
+      "status": "ready"
     },
     {
       "id": "C1",
@@ -151,7 +155,8 @@
         "kind": "window",
         "file": "windows/C_GQfni7JdYvY_840-1080.mp4",
         "fps": "30000/1001",
-        "src_t0": 835.835
+        "src_t0": 835.835,
+        "src_t0_verified": true
       },
       "label_window": {
         "start_s": 900.0,
@@ -172,7 +177,8 @@
         "n_samples": 30,
         "method": "every 4 s over label_window, bottom 8% excluded, full res"
       },
-      "image_tier": "mid"
+      "image_tier": "mid",
+      "status": "ready"
     },
     {
       "id": "D1",
@@ -195,7 +201,8 @@
         "kind": "window",
         "file": "windows/D_c6IV1mQ3GjM_840-1080.mp4",
         "fps": "30000/1001",
-        "src_t0": 835.835
+        "src_t0": 835.835,
+        "src_t0_verified": true
       },
       "label_window": {
         "start_s": 900.0,
@@ -229,7 +236,8 @@
           "1798": "e0606061abbfbf98",
           "3595": "fa747468a2989d9c"
         }
-      }
+      },
+      "status": "ready"
     },
     {
       "id": "D2",
@@ -252,7 +260,8 @@
         "kind": "window",
         "file": "windows/D_gjd12dkMNNI_840-1080.mp4",
         "fps": "30000/1001",
-        "src_t0": 835.835
+        "src_t0": 835.835,
+        "src_t0_verified": true
       },
       "label_window": {
         "start_s": 900.0,
@@ -273,7 +282,8 @@
         "n_samples": 30,
         "method": "every 4 s over label_window, bottom 8% excluded, full res"
       },
-      "image_tier": "high"
+      "image_tier": "high",
+      "status": "ready"
     },
     {
       "id": "A2",
@@ -285,15 +295,20 @@
         "sky 5"
       ],
       "eyeball_tier": "A",
-      "eyeball_note": null,
-      "kit_tier": null,
-      "kits": null,
-      "venue": null,
+      "eyeball_note": "floodlit night, dim (luma 28); frame at 960 s checked by eye, decodes cleanly",
+      "kit_tier": "bibs",
+      "kits": {
+        "T1": "orange bibs over mixed shirts",
+        "T2": "black-and-white shirts"
+      },
+      "venue": "V2",
       "source": {
         "kind": "window",
         "file": "windows/A_O4YGl9Ps93A_840-1080.mp4",
-        "fps": null,
-        "src_t0": null
+        "fps": "30000/1001",
+        "src_t0": 835.835,
+        "src_t0_verified": false,
+        "src_t0_note": "UNVERIFIED: relay starts mid-GOP (first keyframe at window frame 25, pts 0.834); 7319 frames like the eval windows suggests the same 835.835 s start. Train only, so not blocking."
       },
       "label_window": {
         "start_s": 900.0,
@@ -302,7 +317,20 @@
         "shift_reason": null
       },
       "clip_file": "clips/A2.mp4",
-      "notes": "Train. Window relayed from the Mac (pending). Full match later, used in full."
+      "notes": "Train. Window relayed from the Mac (pending). Full match later, used in full.",
+      "status": "ready",
+      "quality": {
+        "luma": 27.7,
+        "rms_contrast": 20.7,
+        "laplacian_var": 185.1,
+        "saturation": 111.9,
+        "lab_a": -5.9,
+        "lab_b": 4.1,
+        "bitrate_mbps": 2.28,
+        "n_samples": 30,
+        "method": "every 4 s over label_window, bottom 8% excluded, full res"
+      },
+      "image_tier": "low"
     },
     {
       "id": "B2",
@@ -331,7 +359,8 @@
         "shift_reason": null
       },
       "clip_file": "clips/B2.mp4",
-      "notes": "Train. Window relayed from the Mac (pending)."
+      "notes": "Train. Window relayed from the Mac (pending). PENDING: cookies grant withdrawn 2026-10-16; not fetched.",
+      "status": "pending"
     },
     {
       "id": "C2",
@@ -360,7 +389,8 @@
         "shift_reason": null
       },
       "clip_file": "clips/C2.mp4",
-      "notes": "Train. Window relayed from the Mac (pending)."
+      "notes": "Train. Window relayed from the Mac (pending). PENDING: cookies grant withdrawn 2026-10-16; not fetched.",
+      "status": "pending"
     },
     {
       "id": "D3",
@@ -392,7 +422,8 @@
         "shift_reason": null
       },
       "clip_file": "clips/D3.mp4",
-      "notes": "Train. Chosen from thumb_scores.csv (luma > 95, edges > 25, no shared team). Spare: b6_9iO20jGQ."
+      "notes": "Train. Chosen from thumb_scores.csv (luma > 95, edges > 25, no shared team). Spare: b6_9iO20jGQ. PENDING: cookies grant withdrawn 2026-10-16; not fetched.",
+      "status": "pending"
     }
   ]
 }

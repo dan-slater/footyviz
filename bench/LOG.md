@@ -22,3 +22,13 @@ Newest last. Commands run from the repo root with `PYTHONPATH=src ~/football-vis
 | D2 | D | clean | 107.1 | 41.0 | 585 | 40.8 | -3.9 / 4.8 | 4.13 | high |
 
 The two axes cross well: image {low: A1 B1, mid: C1, high: D1 D2} × kit {clean: B1 D2, bibs: A1 C1, none: D1}. Train windows not landed yet; re-run `measure` when they do.
+
+## 2026-10-16 — re-timing validated; `fv.bench cut`; data change
+- **Data (control plane):** the cookies grant was withdrawn. Only A2 (O4YGl9Ps93A) relayed; B2, C2 and D3 are `status: pending` in the manifest and the harness skips them. A2 measured: image tier **low** (luma 27.7, lap 185). By eye: night, orange bibs vs black-and-white shirts (kit tier bibs), venue V2 (D1's orange clubhouse).
+- `src/fv/bench/cut.py`: clips are cut by **frame index** from `src_t0` (nearest frame to 900 s ± ½ frame: D1 → window frame 1923, source 899.9991 s; A1 → source frame 27000), `-frames:v round(120·fps)`, libx264 crf 12 + audio. It records n_frames, src start and pHash (frames 0 / mid / last) in the manifest. D1 + A1 cut, 3596 / 3600 frames.
+- **§7 validation on the reference** (stream-copy 840–1080 from the full file, re-time, recut, per-frame pHash vs A1 cut direct):
+  - copy *with* an edit list (ffmpeg 7 default): src_t0 = 840.0, 3600/3600 frames, pHash distance **0** on every frame ✓.
+  - copy *without* an edit list (`-use_editlist 0`, like the relay): frame 0 is the I-frame at 837.7, but two open-GOP leading B-frames are dropped, which leaves a **pts gap after frame 0**. Index re-timing is then off by **2 frames** (mean pHash 3.1; at offset +2 it is 0.1).
+  - **The Rookie eval windows do not have this:** frame 0 is the I-frame at pts 0.056 and pts are uniform (checked B1 C1 D1 D2), so the 835.835 s / frame-1923 derivation holds.
+  - `cut.window_check` now enforces it: frame 0 must be a keyframe and there must be no pts gaps, otherwise an eval cut is refused.
+- **A2 relay fails the check**: it starts mid-GOP, with P/B frames up to the first keyframe at window index 25 (pts 0.834). It has 7,319 frames like the others, so 835.835 is likely, but it is `src_t0_verified: false`. It is a train clip, so this is not blocking; cut warns.
