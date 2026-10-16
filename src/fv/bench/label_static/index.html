@@ -410,7 +410,7 @@ function helpKf() {
 
 // ---------------------------------------------------------------- view switch + keys
 function setView(v) {
-  view = v; document.querySelectorAll(".view").forEach(d => d.classList.toggle("on", d.id === v));
+  view = v; $("#preview").style.display = "none"; document.querySelectorAll(".view").forEach(d => d.classList.toggle("on", d.id === v));
   $("#bg").classList.toggle("on", v === "gallery"); $("#bk").classList.toggle("on", v === "kf");
   render();
 }

@@ -49,3 +49,20 @@ The two axes cross well: image {low: A1 B1, mid: C1, high: D1 D2} × kit {clean:
 |---|---|---|---|---|---|
 | D1 | 386 | 94 | 29 | 270, 720, 2700 | 2.4 min (detect 67 s, reid 38 s, teams+id 21 s, RT-DETR 10 s) |
 | A1 | 287 | 116 | 32 | 90, 1440, 2430 | ~2.2 min |
+
+## 2026-10-16 — D4: labelling page (`fv.bench label`)
+- Runs in tmux **`footyviz-label`** on **127.0.0.1:5191**. From the Mac: `ssh -L 5191:127.0.0.1:5191 zulzi-gpu`, then open http://localhost:5191/#D1. The server log is `~/footyviz-bench-data/label-server.log`.
+- `src/fv/bench/label.py` (stdlib `http.server`, no build step) + `label_static/index.html` (plain JS). On first open, proposed groups that appear on keyframes are seeded as P01…Pn, with the k-means team guess mapped A → T1, B → T2, O → none. The page autosaves `labels/<id>/work.json`. The server derives `clip.json` (fvbench.clip/1) + `keyframes.json` (fvbench.keyframes/1) on every save (`src/fv/bench/labels.py`).
+- **Gallery (L0)**: one card per person, holding that person's tracklet exemplar crops. Hover a crop for a large preview.
+  - Select: click (shift/ctrl adds).
+  - Move: drag a crop onto a card, or `M` (move to the focused card), `N` (move to a new person), `X` (move to ignore).
+  - Edit the person: `1`/`2`/`0` sets the team, `E` keeper, `F` referee, `J` jersey.
+- **Keyframes (L1/L1b)**: the full-res frame with boxes, a 2× loupe, and the people list on the right.
+  - Select and adjust: `Tab` (or click) selects a box; drag a corner to resize; `A`+drag adds a box.
+  - Assign: type digits + `Enter` to set the P-id (`Shift` applies it to the whole tracklet), or click a person in the list. `N` makes a new person.
+  - Mark: `I` ignore (press again to cycle off_pitch/ghost/tiny/truncated), `U` unsure (press again to cycle team), `X` deletes a false box.
+  - `Space`/`Enter` marks the keyframe done and jumps to the next undone one. `←→` navigate.
+  - Blind keyframes are flagged in purple and show no pre-label boxes.
+- Active seconds are logged per view and per keyframe (input in the last 60 s), which turns the §3 cost table into measurements.
+- Checked headless with Chromium (playwright-core): gallery + keyframe flows, autosave, derive; no console errors. The test state was wiped afterwards.
+- Seen on D1: the proposed people include bench subs sitting by the orange wall (they become ignore in the gallery). The k-means "O" cluster is 9 people with no team, which is expected on a no-kit clip.
