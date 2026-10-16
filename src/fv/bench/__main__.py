@@ -5,6 +5,7 @@
     python -m fv.bench cut [--clip D1 ...]         # 120 s labelled clips from windows/full sources
     python -m fv.bench prelabel --clip D1 A1       # keyframe crops + proposed person IDs
     python -m fv.bench label                       # labelling page on 127.0.0.1:5191
+    python -m fv.bench export-labels               # derived GT json -> bench/labels/ (git)
     python -m fv.bench run   --method bench/methods/<m>.yaml --batch <tag> [--clip ..] [--repeats N]
     python -m fv.bench score --run <run-name> [--write-results]
 """
@@ -29,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("label", help="serve the labelling page")
     p.add_argument("--port", type=int, default=5191)
+    p = sub.add_parser("export-labels", help="copy derived GT json into bench/labels/ for git")
+    p.add_argument("--clip", nargs="*")
     p = sub.add_parser("run", help="run a method on eval clips")
     p.add_argument("--method", required=True)
     p.add_argument("--batch", required=True, help="batch tag, e.g. 2026-10-16-base")
@@ -56,6 +59,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "label":
         from . import label
         return label.main(a.port)
+    if a.cmd == "export-labels":
+        from . import labels
+        return labels.export(a.clip)
     if a.cmd == "run":
         from . import run
         return run.main(a.method, a.batch, a.clip, a.repeats, force=a.force)

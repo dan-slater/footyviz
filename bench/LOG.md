@@ -66,3 +66,23 @@ The two axes cross well: image {low: A1 B1, mid: C1, high: D1 D2} × kit {clean:
 - Active seconds are logged per view and per keyframe (input in the last 60 s), which turns the §3 cost table into measurements.
 - Checked headless with Chromium (playwright-core): gallery + keyframe flows, autosave, derive; no console errors. The test state was wiped afterwards.
 - Seen on D1: the proposed people include bench subs sitting by the orange wall (they become ignore in the gallery). The k-means "O" cluster is 9 people with no team, which is expected on a no-kit clip.
+
+## 2026-10-16 — D5: `fv.bench run` / `score` / `export-labels`; first CV batch
+- `src/fv/bench/run.py`: method yaml (`bench/methods/`, `inherits:` shallow per-stage override) → stage adapters over `fv.detect_track` / `fv.reid_track` / `fv.teams` / `fv.identity` (unmodified) → `runs/<method>@<batch>/<clip>/r<k>/{dets,ball}.parquet + meta.json` and `run.json` (commit, config + hash, versions, GPU). Methods: `b0-cv-job`, `b4-bytetrack`, `b4-botsort`, `b3-yolo11x-1280` (not run yet).
+- `src/fv/bench/score.py` scores done keyframes only:
+  - T1: greedy IoU 0.5 with an ignore class; R, P, AP50, AP75, recall by height bucket.
+  - T3: Hungarian team permutation reused downstream; outfield accuracy, keeper accuracy (O or own team counts), false-participant rate.
+  - T4: all-pairs P/R/F1 over cross-keyframe pairs (closed-form counts), keyframe IDF1, identity count error per team with ≥ 2 s phantoms.
+  - Grouping per clip / image tier / kit tier / overall. `--write-results` appends a block to `bench/RESULTS.md` with run, date, commit, config and label version.
+- **Scorer self-test** (synthetic GT built from the D1 pre-labels):
+  - identical predictions → every metric 1.0;
+  - over-split (raw track ids) → pair P 1.0, pair R 0.345, kf IDF1 0.565, count error 14.5;
+  - swapped team letters → 1.0, so the permutation is not penalised.
+- `fv.bench export-labels`: derived `clip.json` / `keyframes.json` → `bench/labels/<id>/` + `VERSION` (JSON only, for git).
+- **Batch `2026-10-16-base`** (deterministic, ×1, all 5 eval clips, no errors): B0 81–88 s/clip (detect 23, reid 38–41, teams 3–5, identity 15–19), ByteTrack-only 26–28 s, BoT-SORT-only 64–68 s. These are scored as soon as labels exist. The table is in RESULTS.md.
+
+## 2026-10-16 — D6: VLM baseline, scoped, not run
+- The run-11 control = `fv.gk_lock --control` and run 13 = `fv.gk_lock`. Both take path flags (`--reid --cache --teams --jersey --vlm-fp --context-dir`) but default to night-slice files.
+- A per-clip adapter needs four steps per clip and repeat: `fv.jersey` → `identity.vlm_fingerprints` (VLM) → `roster_v3.render_context` → `gk_lock`. That's about an hour of wiring.
+- Deferred because it is only worth running (and spending on) once the target clip is labelled. Open question to Daniel: does "B1" in "VLM N=3 on B1 only" mean clip B1 (mzcJ8, not in the D1+A1 label pass) or baseline row B1 (= run 11)?
+- Spend so far: **$0** (no VLM calls; the Gemini key has not been loaded).

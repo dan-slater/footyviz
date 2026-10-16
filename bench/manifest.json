@@ -131,7 +131,20 @@
         "method": "every 4 s over label_window, bottom 8% excluded, full res"
       },
       "image_tier": "low",
-      "status": "ready"
+      "status": "ready",
+      "clip": {
+        "fps": "30000/1001",
+        "n_frames": 3596,
+        "width": 1920,
+        "height": 1080,
+        "first_src_frame": 1923,
+        "start_src_s": 899.9991,
+        "phash": {
+          "0": "d7873734b09494b5",
+          "1798": "e2c486f6e2c3c2e6",
+          "3595": "d0d0381f8bd8db8b"
+        }
+      }
     },
     {
       "id": "C1",
@@ -178,7 +191,20 @@
         "method": "every 4 s over label_window, bottom 8% excluded, full res"
       },
       "image_tier": "mid",
-      "status": "ready"
+      "status": "ready",
+      "clip": {
+        "fps": "30000/1001",
+        "n_frames": 3596,
+        "width": 1920,
+        "height": 1080,
+        "first_src_frame": 1923,
+        "start_src_s": 899.9991,
+        "phash": {
+          "0": "ffe080e989e55d81",
+          "1798": "abb9c3d3ff810061",
+          "3595": "ffe581f9c8c30c84"
+        }
+      }
     },
     {
       "id": "D1",
@@ -283,7 +309,20 @@
         "method": "every 4 s over label_window, bottom 8% excluded, full res"
       },
       "image_tier": "high",
-      "status": "ready"
+      "status": "ready",
+      "clip": {
+        "fps": "30000/1001",
+        "n_frames": 3596,
+        "width": 1920,
+        "height": 1080,
+        "first_src_frame": 1923,
+        "start_src_s": 899.9991,
+        "phash": {
+          "0": "aaa2e98a82e8ec6f",
+          "1798": "a888a898d8de5f5e",
+          "3595": "b4b696b091975751"
+        }
+      }
     },
     {
       "id": "A2",

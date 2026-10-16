@@ -119,3 +119,27 @@ def derive(cid: str) -> dict:
     (d / "clip.json").write_text(json.dumps(clip, indent=1))
     (d / "keyframes.json").write_text(json.dumps(kfj, indent=1))
     return {"status": status, "kf_done": n_done, "people": len(people), "true_count": tc}
+
+
+def export(ids: list[str] | None = None) -> int:
+    """Copy derived GT JSON (no pixels, no work state) into bench/labels/<id>/ for git, and
+    write bench/labels/VERSION = hash of all exported files (a board row records it)."""
+    import hashlib
+    dst_root = M.REPO / "bench" / "labels"
+    h = hashlib.sha1()
+    for d in sorted(LABELS.glob("*/keyframes.json")):
+        cid = d.parent.name
+        if ids and cid not in ids:
+            continue
+        derive(cid)
+        dst = dst_root / cid
+        dst.mkdir(parents=True, exist_ok=True)
+        for f in ("clip.json", "keyframes.json"):
+            b = (d.parent / f).read_bytes()
+            (dst / f).write_bytes(b)
+        print(f"exported {cid}")
+    for p in sorted(dst_root.glob("*/*.json")):
+        h.update(p.read_bytes())
+    (dst_root / "VERSION").write_text(h.hexdigest()[:8] + "\n")
+    print(f"bench/labels/VERSION = {h.hexdigest()[:8]}")
+    return 0
