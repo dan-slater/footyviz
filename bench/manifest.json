@@ -1,0 +1,128 @@
+{
+  "schema": "fvbench.manifest/1",
+  "version": "0.1",
+  "licence": {
+    "footage": "(c) the uploader (Rookie / Veo, YouTube @TRG_Rookie). NOT redistributed; fetch it yourself (bench/fetch.sh).",
+    "labels": "CC-BY-4.0. No names, no pixels; people are anonymous P-ids.",
+    "code": "MIT",
+    "takedown": "A takedown request removes the match from this manifest and its labels."
+  },
+  "data_root": "~/footyviz-bench-data",
+  "conventions": {
+    "window_file": "windows/<eyeball_tier>_<video_id>_<a>-<b>.mp4 (stream copy, starts on the keyframe at or before <a>)",
+    "clip_file": "clips/<id>.mp4 (frame-accurate libx264 crf 12 re-encode, audio kept; frame 0 = first frame with source pts >= label_window.start_s)",
+    "image_tier": "measured by fv.bench.measure: low if luma < 55 or laplacian_var < 250; mid if luma < 90; else high. Confirmed by eye (eye_note).",
+    "kit_tier": "clean = two distinct team kits; bibs = bibs over mixed shirts or one side mixed; none = casual clothes, no team kit",
+    "team_norm": "lower-case, scores/dates/punctuation stripped, then aliases applied; train and eval must be team-disjoint (python -m fv.bench check)"
+  },
+  "team_aliases": {
+    "salahds wins scrums": "salahds",
+    "salahds win scram": "salahds"
+  },
+  "matches": [
+    {
+      "id": "A1", "video_id": "hhaWMwLlugE", "split": "eval",
+      "title": "Expected Toulouse vs Friski Diski 26 06 2026",
+      "teams": ["expected toulouse", "friski diski"],
+      "eyeball_tier": "A", "eyeball_note": "floodlit night, flare over the right half",
+      "kit_tier": "bibs", "kits": {"T1": "pink/orange bibs over mixed shirts", "T2": "white shirts / grey hoodies (+ one maroon shirt)"},
+      "venue": "V1",
+      "source": {"kind": "full", "file": "raw/A_hhaWMwLlugE.mp4", "origin": "symlink to ~/football-vision/data/raw/hhaWMwLlugE_1080.mp4", "fps": "30/1", "n_frames": 71019, "src_t0": 0.0},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/A1.mp4",
+      "notes": "Reference match. A0 (0-60 s) is the run 1-13 continuity slice; not labelled (8.1 #5)."
+    },
+    {
+      "id": "B1", "video_id": "mzcJ8_wyOaw", "split": "eval",
+      "title": "Friski Diski 4 vs Retention United 7 2026-04-07",
+      "teams": ["friski diski", "retention united"],
+      "eyeball_tier": "B", "eyeball_note": "night under floodlights, faint dusk sky in the top corners only, heavy motion blur",
+      "kit_tier": "clean", "kits": {"T1": "white", "T2": "black (dark on dark turf)", "keeper": "red"},
+      "venue": "V3",
+      "source": {"kind": "window", "file": "windows/B_mzcJ8_wyOaw_840-1080.mp4", "fps": "30000/1001", "src_t0": 835.835},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/B1.mp4",
+      "notes": "Forced into eval: shares Friski Diski with A1."
+    },
+    {
+      "id": "C1", "video_id": "GQfni7JdYvY", "split": "eval",
+      "title": "Nose Beers Utd 3 vs Cesc Pistols 9 2026-02-16",
+      "teams": ["nose beers utd", "cesc pistols"],
+      "eyeball_tier": "C", "eyeball_note": "low golden sun, fence/pole shadows striping the pitch, glare top-right, panorama wedges",
+      "kit_tier": "bibs", "kits": {"T1": "red/orange bibs", "T2": "mixed light-blue and royal-blue shirts", "keeper": "hi-vis"},
+      "venue": "V1",
+      "source": {"kind": "window", "file": "windows/C_GQfni7JdYvY_840-1080.mp4", "fps": "30000/1001", "src_t0": 835.835},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/C1.mp4",
+      "notes": "Spectators by the goal in red/blue (false-participant bait)."
+    },
+    {
+      "id": "D1", "video_id": "c6IV1mQ3GjM", "split": "eval",
+      "title": "Salahds Wins Scrums 2 vs Pique Blinders 8 2026-05-24",
+      "teams": ["salahds wins scrums", "pique blinders"],
+      "eyeball_tier": "D", "eyeball_note": "hard sun, long hard shadows",
+      "kit_tier": "none", "kits": {"T1": "casual mixed clothes", "T2": "casual mixed clothes"},
+      "venue": "V2",
+      "source": {"kind": "window", "file": "windows/D_c6IV1mQ3GjM_840-1080.mp4", "fps": "30000/1001", "src_t0": 835.835},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/D1.mp4",
+      "notes": "Easy image, hardest kits (no team kit)."
+    },
+    {
+      "id": "D2", "video_id": "gjd12dkMNNI", "split": "eval",
+      "title": "Salahds win scram vs Sibas kids fc 2026-04-26",
+      "teams": ["salahds win scram", "sibas kids fc"],
+      "eyeball_tier": "D", "eyeball_note": "overcast daylight, wet-lens haze over the lower middle, low colour",
+      "kit_tier": "clean", "kits": {"T1": "light blue", "T2": "black with pink trim"},
+      "venue": "V1",
+      "source": {"kind": "window", "file": "windows/D_gjd12dkMNNI_840-1080.mp4", "fps": "30000/1001", "src_t0": 835.835},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/D2.mp4",
+      "notes": "Forced into eval: shares Salahds with D1."
+    },
+    {
+      "id": "A2", "video_id": "O4YGl9Ps93A", "split": "train",
+      "title": "goal diggers vs sky 5 2026 05 29",
+      "teams": ["goal diggers", "sky 5"],
+      "eyeball_tier": "A", "eyeball_note": null,
+      "kit_tier": null, "kits": null, "venue": null,
+      "source": {"kind": "window", "file": "windows/A_O4YGl9Ps93A_840-1080.mp4", "fps": null, "src_t0": null},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/A2.mp4",
+      "notes": "Train. Window relayed from the Mac (pending). Full match later, used in full."
+    },
+    {
+      "id": "B2", "video_id": "vS4NP3wkBIA", "split": "train",
+      "title": "Swans 4 vs Mamelodi Sundowners 8 2026-05-21",
+      "teams": ["swans", "mamelodi sundowners"],
+      "eyeball_tier": "B", "eyeball_note": null,
+      "kit_tier": null, "kits": null, "venue": null,
+      "source": {"kind": "window", "file": "windows/B_vS4NP3wkBIA_840-1080.mp4", "fps": null, "src_t0": null},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/B2.mp4",
+      "notes": "Train. Window relayed from the Mac (pending)."
+    },
+    {
+      "id": "C2", "video_id": "2u32W0O7ZfQ", "split": "train",
+      "title": "Hellas 2 vs  FC Broadsville 4 2025-10-22",
+      "teams": ["hellas", "fc broadsville"],
+      "eyeball_tier": "C", "eyeball_note": null,
+      "kit_tier": null, "kits": null, "venue": null,
+      "source": {"kind": "window", "file": "windows/C_2u32W0O7ZfQ_840-1080.mp4", "fps": null, "src_t0": null},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/C2.mp4",
+      "notes": "Train. Window relayed from the Mac (pending)."
+    },
+    {
+      "id": "D3", "video_id": "YwkdvL6Un3g", "split": "train",
+      "title": "Unathletico vs The Wizards 2026-09-27",
+      "teams": ["unathletico", "the wizards"],
+      "eyeball_tier": "D", "eyeball_note": "clear daylight (control plane, at 900 s)",
+      "kit_tier": "clean", "kits": {"T1": "blue", "T2": "black"}, "venue": null,
+      "source": {"kind": "window", "file": "windows/D_YwkdvL6Un3g_840-1080.mp4", "fps": null, "src_t0": null},
+      "label_window": {"start_s": 900.0, "end_s": 1020.0, "shifted": false, "shift_reason": null},
+      "clip_file": "clips/D3.mp4",
+      "notes": "Train. Chosen from thumb_scores.csv (luma > 95, edges > 25, no shared team). Spare: b6_9iO20jGQ."
+    }
+  ]
+}
