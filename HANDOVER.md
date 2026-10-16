@@ -4,6 +4,57 @@ Living state doc. Pairs with `RUNBOOK.md` (how to run) and the dossier artifact
 (https://claude.ai/code/artifact/4a561329-21be-4376-acb9-2c92c80756d7).
 Last updated: 2026-10-09.
 
+> ## ⚽ footyviz: public library + site, exp 13 done, benchmark designed (2026-10-16) — READ THIS FIRST
+>
+> **Goal:** football-vision is now **footyviz**, a public open-source library with a demo site. The current thread is **footyviz-bench**: a bad-to-good benchmark of amateur Veo clips to evaluate approaches, swap AI models, and later fine-tune our own.
+>
+> **⚠️ UNCOMMITTED:** only this block in `HANDOVER.md` (main, zulzi). No code WIP anywhere. Commit it with the next real change.
+>
+> **⚠️ zulzi rebooted ~2026-10-14. ALL tmux sessions are gone:** ORCH-fv-pipeline, ORCH-fv-web, ORCH-fv-bench, `footyviz-api` (:8790), `footyviz-web-dev` (:5190), and the surf-lab ORCH-mapkit/ORCH-sim/surflab-dev. Committed work survives. Transcripts are in `~/.claude/projects/-home-danielslater-{football-vision,football-vision-bench,code-footyviz-web}/*.jsonl`. Respawn lines fresh; never assume a line is alive.
+>
+> **What shipped (all pushed; GitHub = zulzi):**
+> - `dan-slater/footyviz` **main ac779d7**: `fv.job` CLI runner, `fv.stats`, optional local `fv.api`, `fv.gk_lock` (exp 13), README as the product page, API.md stats.json schema v1. MIT.
+> - `dan-slater/footyviz-web` **main 162de99**: SvelteKit static showcase (dusk + night demos, heatmaps, roster, honesty line, "Run it on your match"). LIVE at **https://footyviz.danielslater.dev** (CF Pages project `footyviz`, direct-upload from the Mac; `bun run build` then `bunx wrangler pages deploy build --project-name=footyviz --branch=main` with CLOUDFLARE_API_KEY/EMAIL legacy auth, account 084af6c1…).
+> - `dan-slater/footyviz` **bench 9ae3887** (worktree `~/football-vision-bench`): `bench/BENCHMARK.md` design v0.2 + probes of all four eval windows. Design only, no harness code yet.
+> - **Exp 13 (GK-role lock):** keeper track 14 now has its own A-GK row instead of being merged with outfield players. Counts: exp 13 = 40, same-day control = 43, July run 11 = 24. **VLM run-to-run variance dominates identity counts.** Always compare against a same-day control. Follow-up: track 12 (probably the keeper's second tracklet) failed the motion gate (3.9 vs 3.25); loosen the gate and re-run.
+>
+> **Product decisions (Daniel, 2026-10-09):** no public jobs. The site is a demo showcase and people run the library themselves. The VLM layer stays in the repo, off by default, using the user's own key in a gitignored `.env`.
+>
+> **Benchmark data:**
+> - Source: YouTube channel **Rookie (@TRG_Rookie)**, 1,782 Cape Town Veo uploads. Thumbnail triage of all of them is in `~/footyviz-bench-data/thumb_scores.csv`.
+> - Eval windows (source 840–1080 s, stream-copied) are in `~/footyviz-bench-data/windows/`: D1 c6IV1mQ3GjM, D2 gjd12dkMNNI, B1 mzcJ8_wyOaw, C1 GQfni7JdYvY. A1 = the reference hhaWMwLlugE, already local.
+> - **Train matches NOT fetched:** A2 O4YGl9Ps93A, B2 vS4NP3wkBIA, C2 2u32W0O7ZfQ, D3 YwkdvL6Un3g. D3 was chosen by eye: clear day, blue v black kits, no shared team with eval.
+>
+> **Blockers:**
+> 1. **YouTube bot-walls zulzi AND (since 2026-10-09) the Mac** after about a dozen downloads. Fix = `yt-dlp --cookies-from-browser <browser>` on the Mac. Daniel's call, not yet given. Cookies stay on the Mac; never ship them to zulzi.
+> 2. The Mac→zulzi copy runs at only about 0.25–0.75 MB/s and the tailnet drops mid-copy. So copy 4-minute windows, not full matches. Verify size and retry.
+>
+> **Open decisions awaiting Daniel (BENCHMARK.md §8, 7 items):**
+> 1. The metric set.
+> 2. The label budget: 3.2 h now and 2.7 h dense later, OR D1 + A1 first (about 70 min), which is recommended.
+> 3. The team-disjoint split rule.
+> 4. The VLM budget ($30–60) and N = 3 repeats.
+> 5. Whether to label the A0 slice.
+> 6. One window per eval match, and whether whole-match runs go on the board.
+> 7. Tiers on two measured axes (image quality + kit clarity), or keep the eyeball tiers.
+>
+> Also still open: the cookies call; whether to ask the Rookie channel before publishing benchmark-derived material (the raw footage stays private; the public repo gets only ids, timestamps and labels).
+>
+> **Gotchas:**
+> - The Rookie channel mixes in rugby, padel and school 11-a-side festivals (minors), all excluded. Its titles carry team names and the final score.
+> - The "day" demo slice of the reference match is really dusk.
+> - The lines' "Usage limit reached" means re-login with the other account (see the tmux-orchestrator skill). zulzi `claude` was last logged in as nia@nsuna.com.
+> - The idle `❯` ghost text in a line is an auto-suggestion, never an approval.
+>
+> **Next actions:**
+> 1. Get Daniel's §8 answers and the cookies call.
+> 2. Fetch + relay the train windows (or full matches overnight).
+> 3. Respawn ORCH-fv-bench on `~/football-vision-bench` (inline-only brief, commit on `bench`, never push) for Phase 2: manifest + fetch script, pre-labeller, labelling page on 127.0.0.1:5191 (tmux `footyviz-label`), `fv.bench run/score`, baselines.
+> 4. Exp 13 follow-up (motion gate).
+> 5. Check the site's video playback on a real phone.
+>
+> **Pointers:** `bench/BENCHMARK.md` (bench branch), the 2026-10-09 block below, RUNBOOK.md "Job runner" + "Job API", API.md, `~/dan-hub/AGENTS-BOARD.md` (footyviz entries), Mac memory `footyviz-project.md`.
+
 ## 2026-10-09 — footyviz: open-source product + runner (ORCH-fv-pipeline line)
 **Product decision (Daniel):** no public jobs. The repo (github.com/dan-slater/footyviz, MIT) is the
 product; people run it on their own box with their own keys. The web page (sibling line
