@@ -4,6 +4,20 @@ Living state doc. Pairs with `RUNBOOK.md` (how to run) and the dossier artifact
 (https://claude.ai/code/artifact/4a561329-21be-4376-acb9-2c92c80756d7).
 Last updated: 2026-10-09.
 
+> ## ⚽ footyviz-bench Phase 2 BUILT, waiting on labels (2026-10-17) — READ THIS FIRST
+>
+> **Goal:** the bad-to-good benchmark (bench/BENCHMARK.md). Phase 2 harness is built on branch `bench` (worktree `~/football-vision-bench`); first scores need Daniel's D1 + A1 labels.
+>
+> **UNCOMMITTED WIP:** none. main and bench 87d2d68 are both pushed to GitHub (relayed by bundle from the Mac). Keep it that way: zulzi has no push creds.
+>
+> **What shipped (bench, 2026-10-16/17, line ORCH-fv-bench):** BENCHMARK.md §8.1 = Daniel's seven decisions (all approved as recommended; D1 + A1 labelled first; two measured tier axes; N=3 VLM repeats + same-day control; one 120 s window per eval match; A0 not labelled) plus the cookies amendment. `bench/manifest.json` (9 matches, measured image tier + kit tier, team-disjoint check), `fetch.sh`, `fv.bench cut|measure|prelabel|label|run|score|export-labels`, method yamls under `bench/methods/`, scorer self-test, four CV methods (b0, b3-yolo11x-1280, b4-bytetrack, b4-botsort) run on all five eval clips in batch `2026-10-16-base`, VLM adapter (run 11 control / run 13 gk_lock) with spend meter and `--allow-spend` gate, dry-run on B1 at $0. Nothing scored yet. Full log: `bench/LOG.md`.
+>
+> **Blockers:** (1) labels: D1 then A1 at http://localhost:5191/#D1, ~70 min, via the Mac tmux `fv-label-tunnel` (ssh -L 5191) to tmux `footyviz-label` on zulzi. (2) Train windows B2 vS4NP3wkBIA, C2 2u32W0O7ZfQ, D3 YwkdvL6Un3g unfetched: the Chrome `--cookies-from-browser` route was WITHDRAWN by Daniel (it needs the Chrome Safe Storage keychain key = every cookie). Options: youtube.com-only cookies.txt from an extension, or plain retry later. A2 O4YGl9Ps93A is in `~/footyviz-bench-data/windows/`. (3) VLM paid run on B1 needs B1 labelled + Daniel's go.
+>
+> **Gotchas:** zulzi rebooted AGAIN 2026-10-17 10:19 SAST (also ~10-14); every tmux dies, so re-check `tmux ls` before trusting any line or server. The reboot fixed the NVML mismatch. `git commit -a` from the control plane in the bench worktree swept the line's partial files once (01db26f); commit by path. ORCH-fv-bench was NOT respawned after the reboot; spawn fresh when scoring is due. Data dirs: `~/footyviz-bench-data/{windows,labels,prelabels,runs,clips,models}`.
+>
+> **Pointers:** bench/BENCHMARK.md, bench/LOG.md, bench/RESULTS.md, `~/dan-hub/daniel-dev-skills/sessions/footyviz.md`, AGENTS-BOARD footyviz rows. Next: sessions/footyviz.md, session 2026-10-18 (2026-10-18).
+
 > ## ⚽ footyviz: public library + site, exp 13 done, benchmark designed (2026-10-16) — READ THIS FIRST
 >
 > **Goal:** football-vision is now **footyviz**, a public open-source library with a demo site. The current thread is **footyviz-bench**: a bad-to-good benchmark of amateur Veo clips to evaluate approaches, swap AI models, and later fine-tune our own.
