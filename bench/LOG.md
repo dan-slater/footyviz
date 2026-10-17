@@ -86,3 +86,25 @@ The two axes cross well: image {low: A1 B1, mid: C1, high: D1 D2} × kit {clean:
 - A per-clip adapter needs four steps per clip and repeat: `fv.jersey` → `identity.vlm_fingerprints` (VLM) → `roster_v3.render_context` → `gk_lock`. That's about an hour of wiring.
 - Deferred because it is only worth running (and spending on) once the target clip is labelled. Open question to Daniel: does "B1" in "VLM N=3 on B1 only" mean clip B1 (mzcJ8, not in the D1+A1 label pass) or baseline row B1 (= run 11)?
 - Spend so far: **$0** (no VLM calls; the Gemini key has not been loaded).
+
+## 2026-10-17 — B3 run; VLM adapter wired (not run)
+- **Decision (control plane, 2026-10-17):** "B1" in "VLM N=3 on B1 only" = **clip B1 (mzcJ8_wyOaw)** (§8.4 "the B1/B2 repeats"). Wire the adapter now; do NOT run it until B1 is labelled and Daniel gives the go after the D1 + A1 pass.
+- `b3-yolo11x-1280@2026-10-16-base` ran on all 5 eval clips: 125–130 s/clip (detect 66 s). All four CV methods are now ready to score.
+- `src/fv/bench/vlm.py` + `run.py`: per-clip adapter for `identity.method: roster_v3` (run 11, the control) and `gk_lock` (run 13). The fv modules are not modified.
+  - **Shared stages, once per clip + CV config** (`runs/_shared/<clip>-<cvhash>/`, reused by every repeat and by control + method): B0 CV stages, then `identity.extract` (OSNet desc cache), `fv.jersey` OCR, and `roster_v3.render_context` at **scale 1.0**. The night run's 1.5 mapped 720p boxes onto 1080p frames; bench boxes are already in clip pixels.
+  - **Per repeat:** fresh `vlm_fingerprints` (no cache), the GK pre-pass (gk_lock only), then `cluster_team` per team (emb_gate 0.55, min_conf 0.6, max_calls 40), then `_name_clusters`/`_emit`.
+  - **Spend:** a meter on Gemini `generate_content` records calls and prompt/output/thinking tokens per stage, plus an estimated cost (`price_usd_per_mtok` in the yaml, an ESTIMATE of $2 / $12, to verify before the paid run). It goes into `meta.json["vlm"]`, along with `cap_hit` and `grouping_calls`, and `<run>/spend.json` sums the run.
+  - The key is read from `~/football-vision/.env` by path, only when a real client is built, and is never printed.
+  - **Guards:**
+    - VLM methods refuse to run without `--allow-spend`, and print an upper-bound call estimate.
+    - `--dry-vlm` uses a fake client ($0) and suffixes the batch with `-dry`; `score --write-results` refuses dry runs.
+    - `control:` in the yaml runs the control first in the same batch.
+  - Method yamls: `b1-run11.yaml` (control), `b2-run13.yaml` (`control: b1-run11.yaml`).
+- **Dry run on B1** (`2026-10-17-wiring-dry`, 1 repeat, $0) went end to end:
+  - run 11: 212 calls = 111 fingerprints + 101 grouping; 124 s including the shared stages (jersey OCR 33 s).
+  - run 13: 317 calls (+105 GK role); 5.4 s on the shared stages.
+  - The fake client never merges, so A and B hit the 40-call cap. That is expected; with a real VLM, merges end the loop earlier.
+- **Spend estimate for the approved paid run** (B1 × 3 repeats × {run 11 control, run 13}): ≤ ~1,600 calls. At about $0.01–0.03 per call (3–4 images per call, plus Pro thinking tokens) that is **~$16–48**, within the $30–60 budget. The first repeat measures the real rate.
+- **Fingerprints don't change the identities.** `roster.load_context` requires them, but `cluster_team` and the GK pre-pass never read `fp_of`. They are ~35 % of calls (111/317). `vlm.fingerprints: false` would cut that spend, but it departs from run 11's exact inputs. That's Daniel's call; it is on for fidelity.
+- Spend so far: **$0**.
+- Gotcha: background "wait" loops built on `pgrep -f "<pattern>"` match their own shell and never exit. That cost about 30 min; I now run jobs directly in the background instead.

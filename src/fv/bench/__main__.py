@@ -38,6 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--clip", nargs="*")
     p.add_argument("--repeats", type=int, default=None)
     p.add_argument("--force", action="store_true")
+    p.add_argument("--allow-spend", action="store_true", help="permit paid VLM calls (stochastic methods)")
+    p.add_argument("--dry-vlm", action="store_true", help="fake VLM client, $0: wiring test only")
     p = sub.add_parser("score", help="score a run against labels")
     p.add_argument("--run", required=True, nargs="+", help="run name(s) under runs/")
     p.add_argument("--write-results", action="store_true", help="append to bench/RESULTS.md")
@@ -64,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         return labels.export(a.clip)
     if a.cmd == "run":
         from . import run
-        return run.main(a.method, a.batch, a.clip, a.repeats, force=a.force)
+        return run.main(a.method, a.batch, a.clip, a.repeats, force=a.force,
+                        allow_spend=a.allow_spend, dry_vlm=a.dry_vlm)
     if a.cmd == "score":
         from . import score
         from pathlib import Path

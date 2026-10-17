@@ -334,6 +334,10 @@ def main(runs: list[str], write: bool = False, labels: Path = LABELS) -> int:
         return 1
     md = table(results)
     print(md)
+    dry = [r["run"] for r in results if json.loads((RUNS / r["run"] / "run.json").read_text()).get("dry_vlm")]
+    if write and dry:
+        print(f"not writing RESULTS.md: {dry} used the fake VLM client (--dry-vlm)")
+        write = False
     if write:
         hdr = []
         for r in results:

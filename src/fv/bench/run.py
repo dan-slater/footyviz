@@ -16,8 +16,15 @@ Method yaml:
     tracker:  {name: bytetrack | botsort, params: {track_buffer, appearance_thresh}}
                bytetrack = fv.detect_track's ByteTrack only; botsort = + fv.reid_track (OSNet)
     teams:    {method: kmeans_color, k: null}
-    identity: {method: none | cv_fusion, params: {threshold}}
-               (roster_v3 / gk_lock need per-clip adapters: not wired yet)
+    identity: {method: none | cv_fusion | roster_v3 | gk_lock, params: {threshold}}
+               roster_v3 = run 11 (the identity control), gk_lock = run 13; both via fv.bench.vlm
+    vlm:      {provider, model, fingerprints, cluster: {emb_gate, min_conf, max_calls},
+               price_usd_per_mtok: {input, output}}
+    control:  <method yaml> run first in the same batch (same-day control, BENCHMARK.md 5)
+
+Stochastic (VLM) methods refuse to run without --allow-spend (real Gemini calls, cost logged
+in meta.json["vlm"] and <run>/spend.json) or --dry-vlm (fake client, $0, wiring test only).
+The deterministic CV stages live in runs/_shared/<clip>-<cv hash>/ and are reused.
 """
 from __future__ import annotations
 
@@ -65,37 +72,56 @@ def weights(name: str) -> str:
     return name
 
 
-def run_clip(cfg: dict, clip: Path, out: Path, device: str = "cuda:0") -> dict:
+def cv_key(cfg: dict) -> str:
+    return cfg_hash({k: cfg.get(k) for k in ("detector", "tracker", "teams")})
+
+
+def cv_stages(cfg: dict, clip: Path, work: Path, device: str = "cuda:0") -> tuple[Path, Path, Path, dict]:
+    """Deterministic detect -> (re)track -> teams. Skips stages whose output exists."""
     from .. import detect_track, teams
-    work = out / "work"
     work.mkdir(parents=True, exist_ok=True)
     t = {}
     d = cfg["detector"]
-    s = time.time()
     tracks = work / "tracks.parquet"
-    detect_track.run(clip, tracks, model_path=weights(d["weights"]), device=device,
-                     conf=d.get("conf", 0.30), ball=True, ball_conf=d.get("ball_conf", 0.10),
-                     imgsz=d.get("imgsz", 640))
-    t["detect"] = time.time() - s
+    if not tracks.exists():
+        s = time.time()
+        detect_track.run(clip, tracks, model_path=weights(d["weights"]), device=device,
+                         conf=d.get("conf", 0.30), ball=True, ball_conf=d.get("ball_conf", 0.10),
+                         imgsz=d.get("imgsz", 640))
+        t["detect"] = time.time() - s
     person = tracks
     tr = cfg["tracker"]
     if tr["name"] == "botsort":
         from .. import reid_track
-        s = time.time()
         person = work / "reid.parquet"
-        p = tr.get("params", {})
-        reid_track.run(clip, tracks, person, device=device, reid_weights=str(OSNET),
-                       track_buffer=p.get("track_buffer", 90),
-                       appearance_thresh=p.get("appearance_thresh", 0.25))
-        t["reid"] = time.time() - s
+        if not person.exists():
+            s = time.time()
+            p = tr.get("params", {})
+            reid_track.run(clip, tracks, person, device=device, reid_weights=str(OSNET),
+                           track_buffer=p.get("track_buffer", 90),
+                           appearance_thresh=p.get("appearance_thresh", 0.25))
+            t["reid"] = time.time() - s
     elif tr["name"] != "bytetrack":
         raise SystemExit(f"unknown tracker {tr['name']!r}")
-    s = time.time()
     team_map = work / "teams.parquet"
-    teams.run(clip, person, team_map, k=cfg.get("teams", {}).get("k"))
-    t["teams"] = time.time() - s
+    if not team_map.exists():
+        s = time.time()
+        teams.run(clip, person, team_map, k=cfg.get("teams", {}).get("k"))
+        t["teams"] = time.time() - s
+    return tracks, person, team_map, t
+
+
+VLM_METHODS = ("roster_v3", "gk_lock")
+
+
+def run_clip(cfg: dict, clip: Path, out: Path, device: str = "cuda:0", shared: Path | None = None,
+             llm=None, meter=None) -> tuple[dict, dict | None]:
+    from .. import detect_track
+    work = out / "work"
+    work.mkdir(parents=True, exist_ok=True)
     idm = cfg.get("identity", {}).get("method", "none")
-    ident = None
+    tracks, person, team_map, t = cv_stages(cfg, clip, shared or work, device)
+    ident, vlog = None, None
     if idm == "cv_fusion":
         from .. import identity
         s = time.time()
@@ -104,8 +130,17 @@ def run_clip(cfg: dict, clip: Path, out: Path, device: str = "cuda:0") -> dict:
                      reid_weights=str(OSNET),
                      threshold=cfg["identity"].get("params", {}).get("threshold", 0.42))
         t["identity"] = time.time() - s
+    elif idm in VLM_METHODS:
+        from . import vlm
+        if cfg["tracker"]["name"] != "botsort":
+            raise SystemExit("VLM identity methods need tracker botsort (reid tracklets)")
+        p = vlm.prepare_shared(clip, shared, device)
+        t.update(p["timing"])
+        r = vlm.run_repeat(idm, cfg.get("vlm", {}), clip, p, out, llm, meter)
+        ident, vlog = r["identities"], r["log"]
+        t.update(vlog["stage_s"])
     elif idm != "none":
-        raise SystemExit(f"identity method {idm!r} has no per-clip adapter yet (roster_v3/gk_lock: TODO)")
+        raise SystemExit(f"unknown identity method {idm!r}")
 
     # -> prediction format
     df = pd.read_parquet(person)
@@ -127,7 +162,7 @@ def run_clip(cfg: dict, clip: Path, out: Path, device: str = "cuda:0") -> dict:
     b = pd.read_parquet(detect_track.ball_path(tracks))
     pd.DataFrame({"frame": b["frame"], "x": (b.x1 + b.x2) / 2, "y": (b.y1 + b.y2) / 2,
                   "conf": b["confidence"]}).to_parquet(out / "ball.parquet", index=False)
-    return {k: round(v, 1) for k, v in t.items()}
+    return {k: round(v, 1) for k, v in t.items()}, vlog
 
 
 def versions() -> dict:
@@ -143,36 +178,83 @@ def versions() -> dict:
     return out
 
 
-def main(method: str, batch: str, ids: list[str] | None, repeats: int | None, force: bool = False) -> int:
+def estimate_calls(cfg: dict, clips: list[dict], reps: int) -> str:
+    """Upper-bound VLM call count from the B0 tracklet counts (fingerprints 1/track, GK role
+    1/track, grouping <= max_calls per team x 3 teams)."""
+    v, idm = cfg.get("vlm", {}), cfg["identity"]["method"]
+    n_tr = 120  # B0 batch 2026-10-16: 84-121 BoT-SORT tracks per eval clip
+    per = (n_tr if v.get("fingerprints", True) else 0) + (n_tr if idm == "gk_lock" else 0) + \
+        3 * v.get("cluster", {}).get("max_calls", 40)
+    return f"<= ~{per} calls per clip-repeat x {len(clips)} clips x {reps} repeats = <= ~{per * len(clips) * reps} calls"
+
+
+def main(method: str, batch: str, ids: list[str] | None, repeats: int | None, force: bool = False,
+         allow_spend: bool = False, dry_vlm: bool = False, _is_control: bool = False) -> int:
     cfg = load_method(method)
-    reps = repeats or (cfg.get("repeats", 3) if cfg.get("stochastic") else 1)
+    stochastic = bool(cfg.get("stochastic"))
+    reps = repeats or (cfg.get("repeats", 3) if stochastic else 1)
+    m = M.load()
+    clips = [x for x in M.matches(m, split="eval", ids=ids) if x.get("status") == "ready"]
+    is_vlm = cfg.get("identity", {}).get("method") in VLM_METHODS
+    if is_vlm and not (allow_spend or dry_vlm):
+        print(f"REFUSED: {cfg['name']} makes paid VLM calls ({cfg['vlm']['model']}); "
+              f"{estimate_calls(cfg, clips, reps)}.\n"
+              f"  Re-run with --allow-spend once approved, or --dry-vlm to test the wiring for $0.")
+        return 3
+    if cfg.get("control") and not _is_control:
+        ctl = str(Path(method).parent / cfg["control"])
+        print(f"[{cfg['name']}] same-day control first: {cfg['control']} in batch {batch}")
+        rc = main(ctl, batch, ids, repeats, force, allow_spend, dry_vlm, _is_control=True)
+        if rc:
+            return rc
+    if dry_vlm and is_vlm:
+        batch = batch + "-dry"  # never mixes with paid runs on the board
     name = f"{cfg['name']}@{batch}"
     root = RUNS / name
     root.mkdir(parents=True, exist_ok=True)
-    m = M.load()
-    clips = [x for x in M.matches(m, split="eval", ids=ids) if x.get("status") == "ready"]
     sha, ver = git_sha(), versions()
     (root / "run.json").write_text(json.dumps({
         "run": name, "method": cfg["name"], "batch": batch, "date": time.strftime("%Y-%m-%d"),
         "commit": sha, "config": cfg, "config_hash": cfg_hash(cfg), "repeats": reps,
+        "stochastic": stochastic, "dry_vlm": bool(dry_vlm and is_vlm), "control": cfg.get("control"),
         "clips": [x["id"] for x in clips], "versions": ver}, indent=1))
     for x in clips:
         clip = M.data_path(x["clip_file"])
         if not clip.exists():
             print(f"[{x['id']}] no clip; run `fv.bench cut --clip {x['id']}`")
             continue
+        shared = RUNS / "_shared" / f"{x['id']}-{cv_key(cfg)}" if is_vlm else None
         for k in range(1, reps + 1):
             out = root / x["id"] / f"r{k}"
             if (out / "meta.json").exists() and not force:
                 print(f"[{name}] {x['id']} r{k} exists, skipped")
                 continue
             out.mkdir(parents=True, exist_ok=True)
+            llm = meter = None
+            if is_vlm:
+                from . import vlm
+                llm, meter = vlm.make_llm(cfg.get("vlm", {}), dry=dry_vlm)
             s = time.time()
-            timing = run_clip(cfg, clip, out)
+            timing, vlog = run_clip(cfg, clip, out, shared=shared, llm=llm, meter=meter)
+            spend = None
+            if meter is not None:
+                spend = meter.summary() | {"cap_hit": vlog["cap_hit"], "grouping_calls": vlog["grouping_calls"],
+                                           "dry": bool(dry_vlm), "cache": "off"}
             meta = {"run": name, "clip": x["id"], "repeat": k, "commit": sha, "config_hash": cfg_hash(cfg),
                     "versions": ver, "wall_s": round(time.time() - s, 1), "stage_s": timing,
-                    "vlm": None, "seed": None, "date": time.strftime("%Y-%m-%d %H:%M")}
-            (out / "meta.json").write_text(json.dumps(meta, indent=1))
-            print(f"[{name}] {x['id']} r{k}: {meta['wall_s']} s {timing}")
+                    "vlm": spend, "identity_log": vlog, "shared": str(shared) if shared else None,
+                    "seed": None, "date": time.strftime("%Y-%m-%d %H:%M")}
+            (out / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
+            msg = f" vlm {spend['calls']} calls ${spend['cost_usd_est']:.2f} cap_hit {spend['cap_hit']}" if spend else ""
+            print(f"[{name}] {x['id']} r{k}: {meta['wall_s']} s {timing}{msg}")
+    if is_vlm:
+        rows = [json.loads(p.read_text()) for p in sorted(root.glob("*/r*/meta.json"))]
+        tot = {"run": name, "clip_repeats": len(rows),
+               "calls": sum(r["vlm"]["calls"] for r in rows if r.get("vlm")),
+               "cost_usd_est": round(sum(r["vlm"]["cost_usd_est"] for r in rows if r.get("vlm")), 2),
+               "cap_hits": {f"{r['clip']}/r{r['repeat']}": r["vlm"]["cap_hit"] for r in rows
+                            if r.get("vlm") and r["vlm"]["cap_hit"]}}
+        (root / "spend.json").write_text(json.dumps(tot, indent=1))
+        print(f"[{name}] spend: {tot['calls']} calls, ~${tot['cost_usd_est']:.2f} (est.)")
     print(f"-> {root}")
     return 0

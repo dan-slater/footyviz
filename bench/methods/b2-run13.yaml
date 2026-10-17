@@ -1,0 +1,6 @@
+# B2 row: run 13 = run 11 + gk_lock GK-role pre-pass. Scored against b1-run11 in the SAME batch
+# (`control:` runs it first automatically).
+name: b2-run13
+inherits: b1-run11.yaml
+control: b1-run11.yaml
+identity: {method: gk_lock}

@@ -1,0 +1,13 @@
+# B1 row: run 11 = B0 CV stages + roster_v3 neutral VLM grouping. THE identity control.
+# Paid + stochastic: needs --allow-spend; 3 repeats; VLM response cache off.
+name: b1-run11
+inherits: b0-cv-job.yaml
+stochastic: true
+repeats: 3
+identity: {method: roster_v3}
+vlm:
+  provider: gemini
+  model: gemini-3.1-pro-preview
+  fingerprints: true          # faithful to run 11's inputs; NOT read by the grouping (see fv/bench/vlm.py)
+  cluster: {emb_gate: 0.55, min_conf: 0.6, max_calls: 40}
+  price_usd_per_mtok: {input: 2.0, output: 12.0}   # ESTIMATE; check Google's price sheet before the paid run
